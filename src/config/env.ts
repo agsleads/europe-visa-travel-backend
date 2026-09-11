@@ -32,8 +32,42 @@ const envSchema = z
      * static key held only on the Next server is the right weight of control.
      * Required in production — a public write endpoint with no auth is an
      * open spam funnel.
+     *
+     * Blank means absent. `API_KEY=` with nothing after it is how a developer
+     * says "not using this yet", and treating that as a zero-length key made
+     * the process refuse to boot with a length complaint about a value nobody
+     * had set. Outside production the endpoint then runs unauthenticated, and
+     * `apiKeyAuth` logs a warning each time so it cannot become quietly normal.
+     *
+     * A short key is still rejected. Four characters is not a weaker secret
+     * than none — it is the same exposure plus the belief that it is covered.
      */
-    API_KEY: z.string().min(16, "API_KEY must be at least 16 characters.").optional(),
+    API_KEY: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.string().min(16, "API_KEY must be at least 16 characters.").optional(),
+    ),
+
+    /**
+     * Shared secret the Road Cover site sends as `x-roadcover-signature`.
+     *
+     * Deliberately not `API_KEY`. That key belongs to our own Next frontend;
+     * this one is held by a site we do not deploy. Sharing one value would mean
+     * rotating ours requires a release of theirs, and a leak of either would
+     * expose both surfaces.
+     *
+     * Same blank-means-absent handling as API_KEY: `ROADCOVER_WEBHOOK_SECRET=`
+     * with nothing after it is how a developer says "not wired up yet", and
+     * outside production the endpoint then runs unauthenticated with a warning
+     * on every request. A short secret is still rejected — 8 characters is not
+     * weaker than none, it is the same exposure plus the belief it is covered.
+     */
+    ROADCOVER_WEBHOOK_SECRET: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z
+        .string()
+        .min(16, "ROADCOVER_WEBHOOK_SECRET must be at least 16 characters.")
+        .optional(),
+    ),
 
     /** Comma-separated origins allowed to call the API from a browser. */
     CORS_ORIGINS: z.string().default("").transform(csv),
@@ -57,6 +91,15 @@ const envSchema = z
           "API_KEY is required in production. Refusing to expose an unauthenticated write endpoint.",
       });
     }
+
+    /* ROADCOVER_WEBHOOK_SECRET is deliberately NOT required here, unlike
+       API_KEY, and the asymmetry is the point. API_KEY is what this service
+       exists to serve; the Road Cover webhook is one integration on the side.
+       Refusing to boot the enquiry API because a partner's secret has not been
+       issued yet would take down the whole service for an unrelated reason.
+       `roadcoverWebhookAuth` fails closed instead — in production an unset
+       secret rejects every lead with a 401, which is visible immediately
+       without being an outage. */
   });
 
 export type Env = z.infer<typeof envSchema>;

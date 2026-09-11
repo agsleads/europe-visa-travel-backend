@@ -8,16 +8,20 @@ import { env, isProduction, isTest } from "@/config/env";
 import { errorHandler, notFoundHandler } from "@/api/middleware/errorHandler";
 import { requestId, requestIdOf } from "@/api/middleware/requestId";
 import { enquiriesRouter } from "@/api/routes/enquiries.routes";
+import { leadsRouter } from "@/api/routes/leads.routes";
 import { healthRouter } from "@/api/routes/health.routes";
 import { logger } from "@/lib/logger";
 import type { EnquiryService } from "@/services/enquiry.service";
+import type { LeadService } from "@/services/lead.service";
 
 /**
  * The app is built by a factory, not created at import time. Tests construct
  * one per suite with a fake service injected, and nothing binds a port or
  * opens a connection as a side effect of `import`.
  */
-export function createApp(deps: { enquiryService?: EnquiryService } = {}): Express {
+export function createApp(
+  deps: { enquiryService?: EnquiryService; leadService?: LeadService } = {},
+): Express {
   const app = express();
 
   /* Behind Vercel / a load balancer, `req.ip` is the proxy unless Express is
@@ -79,6 +83,11 @@ export function createApp(deps: { enquiryService?: EnquiryService } = {}): Expre
      version onto an unversioned path that a deployed frontend already calls
      is not. */
   app.use("/api/v1/enquiries", enquiriesRouter(deps.enquiryService));
+  /* Road Cover lead intake and its operator reads. Namespaced by producer
+     rather than mounted as a second top-level resource: the payload, the
+     credential and the retention rules all belong to that partner, and a flat
+     /api/v1/leads would read as though this service had one lead concept. */
+  app.use("/api/v1/roadcover/leads", leadsRouter(deps.leadService));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

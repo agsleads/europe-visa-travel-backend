@@ -25,3 +25,24 @@ export const writeLimiter = rateLimit({
     },
   },
 });
+
+/**
+ * Road Cover lead intake.
+ *
+ * Its own bucket rather than `writeLimiter`, because it is a different caller
+ * with a different traffic shape: one server posting on behalf of many
+ * consumers, so every lead in a campaign spike arrives from a single IP. Under
+ * the contact form's 30-per-10-minutes that is an outage disguised as a limit,
+ * and a rejected lead is gone — the producer does not retry.
+ *
+ * 60/minute is generous for the real volume and still a brake on a loop. The
+ * response body matches the producer's own error shape rather than this API's
+ * envelope, for the reason the 201 does: the contract is already deployed.
+ */
+export const leadIntakeLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { ok: false, error: "Too many requests. Please retry shortly." },
+});
