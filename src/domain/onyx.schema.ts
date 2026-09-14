@@ -4,8 +4,10 @@ import { z } from "zod";
  * Request body for POST /api/v1/onyx/utilization.
  *
  * Field names match Onyx's own, so the body a caller sends here is exactly the
- * body forwarded to Onyx. Validated first so an obviously broken request is
- * answered with a clear 422 here, instead of being sent on and bounced by Onyx.
+ * body forwarded to Onyx. Only the phone number is required; every other field
+ * is optional, and when one is sent it must be well-formed. Validated first so
+ * an obviously broken request gets a clear 422 here instead of being sent on
+ * and bounced by Onyx.
  */
 export const onyxUtilizationSchema = z.object({
   lead_phone_number: z
@@ -17,17 +19,19 @@ export const onyxUtilizationSchema = z.object({
     .string()
     .trim()
     .toUpperCase()
-    .regex(/^[A-Z]{2}$/, "Expected a two-letter state code, e.g. CA."),
+    .regex(/^[A-Z]{2}$/, "Expected a two-letter state code, e.g. CA.")
+    .optional(),
 
   zip_code: z
     .string()
     .trim()
-    .regex(/^\d{5}(-\d{4})?$/, "Expected a five-digit ZIP code, e.g. 94105."),
+    .regex(/^\d{5}(-\d{4})?$/, "Expected a five-digit ZIP code, e.g. 94105.")
+    .optional(),
 
-  external_id: z.string().trim().min(1, "external_id is required.").max(100),
+  external_id: z.string().trim().min(1).max(100).optional(),
 
-  first_name: z.string().trim().min(1, "first_name is required.").max(100),
-  last_name: z.string().trim().min(1, "last_name is required.").max(100),
+  first_name: z.string().trim().min(1).max(100).optional(),
+  last_name: z.string().trim().min(1).max(100).optional(),
 
   date_of_birth: z
     .string()
@@ -36,7 +40,7 @@ export const onyxUtilizationSchema = z.object({
     .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00Z`)), "That date does not exist.")
     .optional(),
 
-  email: z.string().trim().max(254).email("Expected a valid email address."),
+  email: z.string().trim().max(254).email("Expected a valid email address.").optional(),
 
   address: z.string().trim().max(200).optional(),
   city: z.string().trim().max(100).optional(),

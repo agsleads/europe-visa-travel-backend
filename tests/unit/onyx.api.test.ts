@@ -80,6 +80,25 @@ describe("POST /api/v1/onyx/utilization", () => {
     expect(sent).toEqual(required);
   });
 
+  it("accepts a phone number on its own", async () => {
+    let sent: Record<string, unknown> = {};
+    const app = appWith(async (_url, init) => {
+      sent = JSON.parse(init.body as string);
+      return new Response("{}", { status: 200 });
+    });
+
+    expect((await post(app, { lead_phone_number: "+14155550199" })).status).toBe(200);
+    expect(sent).toEqual({ lead_phone_number: "+14155550199" });
+  });
+
+  it("returns 422 without a phone number", async () => {
+    const app = appWith(async () => new Response("{}", { status: 200 }));
+
+    const response = await post(app, { state: "CA", zip_code: "94105" });
+    expect(response.status).toBe(422);
+    expect(response.body.error.details.fieldErrors).toHaveProperty("lead_phone_number");
+  });
+
   it("returns 422 and does not call Onyx when the body is invalid", async () => {
     let called = false;
     const app = appWith(async () => {
