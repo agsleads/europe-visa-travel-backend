@@ -46,3 +46,29 @@ export const leadIntakeLimiter = rateLimit({
   legacyHeaders: false,
   message: { ok: false, error: "Too many requests. Please retry shortly." },
 });
+
+/**
+ * Final Expense Coverage lead intake.
+ *
+ * Its own bucket, for the reason the Road Cover one has: one server posting on
+ * behalf of many visitors, so every lead in a campaign spike arrives from a
+ * single IP and would exhaust `writeLimiter` in seconds. Separate from the Road
+ * Cover limiter so a spike on one site cannot throttle the other -- an
+ * `express-rate-limit` instance keeps one counter per key, and sharing an
+ * instance would share the counter.
+ *
+ * Unlike the Road Cover one this speaks the API's own error envelope: there is
+ * no already-deployed producer contract here to stay compatible with.
+ */
+export const finalExpenseIntakeLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    error: {
+      code: "rate_limited",
+      message: "Too many requests. Please retry shortly.",
+    },
+  },
+});

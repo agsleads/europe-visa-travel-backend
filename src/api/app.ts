@@ -8,11 +8,13 @@ import { env, isProduction, isTest } from "@/config/env";
 import { errorHandler, notFoundHandler } from "@/api/middleware/errorHandler";
 import { requestId, requestIdOf } from "@/api/middleware/requestId";
 import { enquiriesRouter } from "@/api/routes/enquiries.routes";
+import { finalExpenseRouter } from "@/api/routes/finalexpense.routes";
 import { leadsRouter } from "@/api/routes/leads.routes";
 import { onyxRouter } from "@/api/routes/onyx.routes";
 import { healthRouter } from "@/api/routes/health.routes";
 import { logger } from "@/lib/logger";
 import type { EnquiryService } from "@/services/enquiry.service";
+import type { FinalExpenseService } from "@/services/finalexpense.service";
 import type { LeadService } from "@/services/lead.service";
 import type { OnyxClient } from "@/services/onyx.client";
 
@@ -25,6 +27,7 @@ export function createApp(
   deps: {
     enquiryService?: EnquiryService;
     leadService?: LeadService;
+    finalExpenseService?: FinalExpenseService;
     onyxClient?: OnyxClient;
   } = {},
 ): Express {
@@ -94,6 +97,9 @@ export function createApp(
      credential and the retention rules all belong to that partner, and a flat
      /api/v1/leads would read as though this service had one lead concept. */
   app.use("/api/v1/roadcover/leads", leadsRouter(deps.leadService));
+  /* Final Expense Coverage lead intake, namespaced by producer for the same
+     reason: its own payload, its own credential, its own retention. */
+  app.use("/api/v1/finalexpense/leads", finalExpenseRouter(deps.finalExpenseService));
   app.use("/api/v1/onyx", onyxRouter(deps.onyxClient));
 
   app.use(notFoundHandler);

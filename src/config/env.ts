@@ -70,6 +70,26 @@ const envSchema = z
     ),
 
     /**
+     * Shared secret the Final Expense Coverage site sends as
+     * `x-finalexpense-signature`.
+     *
+     * Its own value, distinct from both `API_KEY` and the Road Cover secret, for
+     * the reason each of those is distinct from the others: a leak of one must
+     * not expose another surface, and rotating one must not cost a different
+     * site a release. Same blank-means-absent handling and 16-character floor.
+     * Outside production an unset secret leaves intake unauthenticated with a
+     * warning on every request; in production `finalExpenseWebhookAuth` fails
+     * closed with a 401, which is visible immediately without being an outage.
+     */
+    FINALEXPENSE_WEBHOOK_SECRET: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z
+        .string()
+        .min(16, "FINALEXPENSE_WEBHOOK_SECRET must be at least 16 characters.")
+        .optional(),
+    ),
+
+    /**
      * Onyx utilization API. The key is sent as-is in the `Authorization`
      * header and never logged. Blank means absent: the endpoint then answers
      * 503 instead of calling Onyx with no credential.
