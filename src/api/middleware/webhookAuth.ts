@@ -106,3 +106,19 @@ export const finalExpenseWebhookAuth = createSharedSecretAuth({
   envName: "FINALEXPENSE_WEBHOOK_SECRET",
   label: "Final Expense webhook",
 });
+
+/**
+ * Auth for Senior Health Benefits Medicare lead intake
+ * (`x-seniorhealth-signature`).
+ *
+ * The site's Next.js server route sends its secret verbatim, and only from the
+ * server -- the browser never sees it, so it is not a public key on a write
+ * endpoint. Same limit as the others: a static secret proves who is calling,
+ * not that the body was not altered on the way.
+ */
+export const seniorHealthWebhookAuth = createSharedSecretAuth({
+  header: "x-seniorhealth-signature",
+  secret: () => env.SENIORHEALTH_WEBHOOK_SECRET,
+  envName: "SENIORHEALTH_WEBHOOK_SECRET",
+  label: "Senior Health webhook",
+});
