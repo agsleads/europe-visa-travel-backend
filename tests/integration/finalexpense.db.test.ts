@@ -56,7 +56,6 @@ describeDb("final expense leads (PostgreSQL)", () => {
       phoneE164: "+13075550142",
       zip: "82001",
       age: 70,
-      coverageAmount: 15000,
       source: "finalexpensecoverage.us",
       isRepeat: false,
       relatedLeadIds: [],
@@ -152,9 +151,9 @@ describeDb("final expense leads (PostgreSQL)", () => {
       query(
         `INSERT INTO final_expense_leads
            (dedupe_key, submitted_at, source, first_name, last_name, phone_raw,
-            email, email_normalised, zip, date_of_birth, age, coverage_amount, raw_payload)
+            email, email_normalised, zip, date_of_birth, age, raw_payload)
          VALUES (repeat('a', 64), NOW(), 's', 'a', 'b', '1', 'no-at-sign', 'x',
-                 '82001', '1950-01-01', 70, 5000, '{}')`,
+                 '82001', '1950-01-01', 70, '{}')`,
       ),
     ).rejects.toMatchObject({ code: "23514" }); // check_violation
   });

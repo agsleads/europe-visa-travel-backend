@@ -86,29 +86,7 @@ export function ageOn(dateOfBirth: CalendarDate, reference: Date): number {
 export const MIN_AGE = 18;
 export const MAX_AGE = 110;
 
-/** Whole dollars the person asked to be quoted for. */
-export const MIN_COVERAGE = 1_000;
-export const MAX_COVERAGE = 1_000_000;
-
 /* ------------------------------------------------------------------ answers */
-
-/**
- * `coverageAmount` normally arrives as a number, but a form that posts strings
- * is one refactor away, and a digit string is unambiguous. Anything else -- an
- * empty string, "12,000", a float -- is rejected rather than coerced: `Number("")`
- * is `0` and `Number(null)` is `0`, which is how a missing answer becomes a
- * plausible-looking one.
- */
-const coverageAmount = z
-  .union([z.number(), z.string().trim().regex(/^\d{1,8}$/, "Expected a whole dollar amount.")])
-  .transform((value) => (typeof value === "number" ? value : Number(value)))
-  .pipe(
-    z
-      .number()
-      .int("Expected a whole dollar amount.")
-      .min(MIN_COVERAGE, `Coverage starts at $${MIN_COVERAGE.toLocaleString("en-US")}.`)
-      .max(MAX_COVERAGE, `Coverage is capped at $${MAX_COVERAGE.toLocaleString("en-US")}.`),
-  );
 
 export const finalExpenseAnswersSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required.").max(50),
@@ -139,10 +117,38 @@ export const finalExpenseAnswersSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a date of birth as YYYY-MM-DD.")
     .refine((value) => parseCalendarDate(value) !== null, "Expected a real calendar date."),
 
-  coverageAmount,
 });
 
 export type FinalExpenseAnswers = z.infer<typeof finalExpenseAnswersSchema>;
+
+/* ------------------------------------------------------------------ leadid */
+
+/** A Jornaya LeadiD: 36 characters of hex and dashes, in UUID layout. */
+const UNIVERSAL_LEADID_PATTERN = /^[A-Fa-f0-9-]{36}$/;
+
+export type UniversalLeadIdStatus = "valid" | "missing" | "malformed";
+
+/**
+ * Reads the Jornaya LeadiD off the wire without ever failing the lead.
+ *
+ * Tracking is not worth a lost lead, so this is deliberately not a Zod
+ * validator: a missing, empty, non-string or badly shaped value all resolve to
+ * `null` with a status the caller can log, where a validator would 422.
+ */
+export function parseUniversalLeadId(value: unknown): {
+  value: string | null;
+  status: UniversalLeadIdStatus;
+} {
+  if (value === undefined || value === null) return { value: null, status: "missing" };
+  if (typeof value !== "string") return { value: null, status: "malformed" };
+
+  const trimmed = value.trim();
+  if (trimmed === "") return { value: null, status: "missing" };
+
+  return UNIVERSAL_LEADID_PATTERN.test(trimmed)
+    ? { value: trimmed, status: "valid" }
+    : { value: null, status: "malformed" };
+}
 
 /* ----------------------------------------------------------------- envelope */
 
@@ -165,6 +171,10 @@ export const finalExpenseWebhookSchema = z
     source: z.string().trim().min(1, "A source is required.").max(100),
 
     answers: finalExpenseAnswersSchema,
+
+    /* Jornaya LeadiD. `unknown` on purpose: shape is checked by
+       `parseUniversalLeadId`, which stores null rather than rejecting the lead. */
+    universalLeadId: z.unknown().optional(),
 
     consent: z.object({
       /* Capped far above the ~700 characters the current wording runs to, and
@@ -233,7 +243,8 @@ export interface CreateFinalExpenseLead {
   /** `YYYY-MM-DD`. Kept as a string end to end -- see the note on the column. */
   dateOfBirth: string;
   age: number;
-  coverageAmount: number;
+  /** Jornaya LeadiD, or null when the browser sent none or a malformed one. */
+  universalLeadId: string | null;
   rawPayload: unknown;
   consent: {
     text: string;
@@ -286,7 +297,7 @@ export function toCreateFinalExpenseLead(
     zip: answers.zip,
     dateOfBirth: answers.dateOfBirth,
     age: ageOn(dob, payload.receivedAt),
-    coverageAmount: answers.coverageAmount,
+    universalLeadId: parseUniversalLeadId(payload.universalLeadId).value,
     rawPayload,
 
     consent: {
@@ -319,7 +330,6 @@ export interface FinalExpenseLead {
   email: string;
   zip: string;
   age: number;
-  coverageAmount: number;
   createdAt: Date;
   /**
    * True when an earlier lead shares this one's phone or email.
@@ -343,6 +353,8 @@ export interface FinalExpenseLeadConsent {
 export interface FinalExpenseLeadDetail extends FinalExpenseLead {
   /** `YYYY-MM-DD`. */
   dateOfBirth: string;
+  /** Jornaya LeadiD. Null for leads without one. */
+  universalLeadId: string | null;
   consent: FinalExpenseLeadConsent;
   rawPayload: unknown;
   /** Ids of earlier leads from the same phone or email, newest first. */

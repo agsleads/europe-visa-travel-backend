@@ -29,13 +29,13 @@ interface LeadRow {
   email: string;
   zip: string;
   age: number;
-  coverage_amount: number;
   created_at: Date;
   is_repeat: boolean;
 }
 
 interface LeadDetailRow extends LeadRow {
   date_of_birth: string;
+  universal_leadid: string | null;
   raw_payload: unknown;
   consent_text: string;
   consent_version: string;
@@ -55,7 +55,7 @@ interface LeadDetailRow extends LeadRow {
  */
 const LEAD_COLUMNS = `
   l.id, l.submitted_at, l.source, l.first_name, l.last_name,
-  l.phone_raw, l.phone_e164, l.email, l.zip, l.age, l.coverage_amount, l.created_at,
+  l.phone_raw, l.phone_e164, l.email, l.zip, l.age, l.created_at,
   EXISTS (
     SELECT 1 FROM final_expense_leads earlier
      WHERE earlier.id < l.id
@@ -76,7 +76,6 @@ function toLead(row: LeadRow): FinalExpenseLead {
     email: row.email,
     zip: row.zip,
     age: row.age,
-    coverageAmount: row.coverage_amount,
     createdAt: row.created_at,
     isRepeat: row.is_repeat,
   };
@@ -86,6 +85,7 @@ function toLeadDetail(row: LeadDetailRow, relatedLeadIds: number[]): FinalExpens
   return {
     ...toLead(row),
     dateOfBirth: row.date_of_birth,
+    universalLeadId: row.universal_leadid,
     rawPayload: row.raw_payload,
     relatedLeadIds,
     consent: {
@@ -127,8 +127,8 @@ export const finalExpenseLeadRepository: FinalExpenseLeadRepository = {
         `INSERT INTO final_expense_leads
            (dedupe_key, submitted_at, source, first_name, last_name,
             phone_raw, phone_e164, email, email_normalised, zip,
-            date_of_birth, age, coverage_amount, raw_payload)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::date, $12, $13, $14::jsonb)
+            date_of_birth, age, raw_payload, universal_leadid)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::date, $12, $13::jsonb, $14)
          ON CONFLICT (dedupe_key) DO NOTHING
          RETURNING id`,
         [
@@ -144,8 +144,8 @@ export const finalExpenseLeadRepository: FinalExpenseLeadRepository = {
           input.zip,
           input.dateOfBirth,
           input.age,
-          input.coverageAmount,
           JSON.stringify(input.rawPayload),
+          input.universalLeadId,
         ],
       );
 
@@ -199,6 +199,7 @@ export const finalExpenseLeadRepository: FinalExpenseLeadRepository = {
     const { rows } = await query<LeadDetailRow>(
       `SELECT ${LEAD_COLUMNS},
               TO_CHAR(l.date_of_birth, 'YYYY-MM-DD') AS date_of_birth,
+              l.universal_leadid,
               l.raw_payload,
               c.consent_text, c.consent_version, c.consented_at,
               c.ip_address, c.user_agent

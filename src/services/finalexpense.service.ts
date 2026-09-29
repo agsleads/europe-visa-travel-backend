@@ -1,4 +1,5 @@
 import {
+  parseUniversalLeadId,
   toCreateFinalExpenseLead,
   type FinalExpenseLead,
   type FinalExpenseLeadDetail,
@@ -42,6 +43,16 @@ export function createFinalExpenseService(
       rawBody: unknown,
     ): Promise<{ lead: FinalExpenseLead; duplicate: boolean }> {
       const input = toCreateFinalExpenseLead(payload, rawBody);
+
+      /* Never a reason to refuse the lead: it is stored without the token. The
+         value itself is not logged; the verbatim copy is in raw_payload. */
+      const leadId = parseUniversalLeadId(payload.universalLeadId);
+      if (leadId.status !== "valid") {
+        logger.warn(
+          { submissionId: payload.submissionId, source: payload.source, universalLeadIdStatus: leadId.status },
+          "Final Expense lead has no usable Jornaya LeadiD",
+        );
+      }
 
       try {
         const { lead, duplicate } = await repository.create(input);

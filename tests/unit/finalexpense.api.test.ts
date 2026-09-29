@@ -59,7 +59,6 @@ describe("POST /api/v1/finalexpense/leads", () => {
     // The schema lower-cases the address; the normalised form is what repeats match on.
     expect(lead.email).toBe("margaret.oconnor@example.com");
     expect(lead.emailNormalised).toBe("margaret.oconnor@example.com");
-    expect(lead.coverageAmount).toBe(15000);
     expect(lead.source).toBe("finalexpensecoverage.us");
   });
 
@@ -85,13 +84,52 @@ describe("POST /api/v1/finalexpense/leads", () => {
     expect(repository.rows[1]!.isRepeat).toBe(true);
   });
 
-  it("accepts a coverage amount sent as a digit string", async () => {
-    const response = await post(
-      validFinalExpensePayload({ answers: answersWith({ coverageAmount: "25000" }) }),
-    );
+  /* Jornaya LeadiD. It ties the lead to Jornaya's consent recording, but a
+     visitor with an ad blocker sends none: tracking must never cost a lead. */
+  describe("Jornaya LeadiD", () => {
+    const LEADID = "4A1B78B9-0CDC-43A7-98EA-2B680A5313A2";
 
-    expect(response.status).toBe(201);
-    expect(repository.rows[0]!.coverageAmount).toBe(25000);
+    it("stores a valid LeadiD with the lead", async () => {
+      const response = await post(validFinalExpensePayload({ universalLeadId: LEADID }));
+
+      expect(response.status).toBe(201);
+      expect(repository.rows[0]!.universalLeadId).toBe(LEADID);
+    });
+
+    it("stores null, and still accepts the lead, when the LeadiD is missing", async () => {
+      const response = await post(validFinalExpensePayload());
+
+      expect(response.status).toBe(201);
+      expect(repository.rows[0]!.universalLeadId).toBeNull();
+    });
+
+    it("stores null, and still accepts the lead, for an empty or malformed LeadiD", async () => {
+      const cases: unknown[] = ["", "   ", "not-a-leadid", `${LEADID}0`, LEADID.slice(1), "Z".repeat(36), 12345, {}];
+
+      for (const [i, bad] of cases.entries()) {
+        const response = await post(
+          validFinalExpensePayload({ submissionId: `malformed-leadid-${i}`, universalLeadId: bad }),
+        );
+        expect(response.status, JSON.stringify(bad)).toBe(201);
+        expect(repository.rows[i]!.universalLeadId, JSON.stringify(bad)).toBeNull();
+      }
+    });
+
+    it("keeps whatever the browser sent in the raw payload", async () => {
+      await post(validFinalExpensePayload({ universalLeadId: "not-a-leadid" }));
+
+      expect((repository.rows[0]!.rawPayload as Record<string, unknown>).universalLeadId).toBe("not-a-leadid");
+    });
+
+    it("returns the LeadiD on the admin detail view but not in the list", async () => {
+      await post(validFinalExpensePayload({ universalLeadId: LEADID }));
+
+      const detail = await request(app).get(`${INTAKE}/1`).set("x-api-key", API_KEY);
+      expect(detail.body.data.universalLeadId).toBe(LEADID);
+
+      const list = await request(app).get(INTAKE).set("x-api-key", API_KEY);
+      expect(list.body.data[0]).not.toHaveProperty("universalLeadId");
+    });
   });
 
   it("accepts a payload with no audit block at all", async () => {
@@ -172,10 +210,6 @@ describe("POST /api/v1/finalexpense/leads", () => {
       [{ firstName: "   " }, "answers.firstName"],
       [{ dateOfBirth: "11/03/1955" }, "answers.dateOfBirth"],
       [{ dateOfBirth: "1955-02-30" }, "answers.dateOfBirth"], // not a real date
-      [{ coverageAmount: 500 }, "answers.coverageAmount"],
-      [{ coverageAmount: 15000.5 }, "answers.coverageAmount"],
-      [{ coverageAmount: "" }, "answers.coverageAmount"],
-      [{ coverageAmount: "12,000" }, "answers.coverageAmount"],
     ];
 
     for (const [change, field] of cases) {
@@ -261,7 +295,7 @@ describe("Final Expense operator reads", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.data).toHaveLength(1);
-    expect(response.body.data[0]).toMatchObject({ firstName: "Margaret", age: 70, coverageAmount: 15000 });
+    expect(response.body.data[0]).toMatchObject({ firstName: "Margaret", age: 70 });
     expect(response.body.data[0]).not.toHaveProperty("dateOfBirth");
     expect(response.body.pagination).toMatchObject({ total: 1, limit: 25, offset: 0, hasMore: false });
   });

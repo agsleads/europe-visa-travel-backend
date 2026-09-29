@@ -67,7 +67,7 @@ secret, not `x-api-key`; the reads use `x-api-key` like everything else.
 | GET    | `/finalexpense/leads/:id`          | `x-api-key`                 | One lead with date of birth, consent record and raw body. |
 
 The POST body is `{ submissionId, receivedAt, source, answers: { firstName,
-lastName, phone, email, zip, dateOfBirth, coverageAmount }, consent: { text,
+lastName, phone, email, zip, dateOfBirth }, consent: { text,
 version, timestamp }, audit?: { ipAddress, userAgent } }`. `submissionId` is the
 idempotency key: the site keeps it across a retry, so a submit that reached us
 but lost its response is recorded once. Tables are in migration `003`; the

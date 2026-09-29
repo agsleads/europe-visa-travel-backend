@@ -19,6 +19,7 @@ interface StoredLead extends FinalExpenseLead {
   dedupeKey: string;
   emailNormalised: string;
   dateOfBirth: string;
+  universalLeadId: string | null;
   rawPayload: unknown;
   consent: CreateFinalExpenseLead["consent"];
 }
@@ -57,7 +58,7 @@ export function createFakeFinalExpenseRepository(): FinalExpenseLeadRepository &
         zip: input.zip,
         dateOfBirth: input.dateOfBirth,
         age: input.age,
-        coverageAmount: input.coverageAmount,
+        universalLeadId: input.universalLeadId,
         createdAt: new Date(),
         isRepeat: rows.some(
           (r) =>
@@ -144,7 +145,6 @@ export function validFinalExpensePayload(
       email: "Margaret.OConnor@Example.com",
       zip: "82001",
       dateOfBirth: "1955-11-03",
-      coverageAmount: 15000,
     },
     consent: {
       text: 'By checking this box and clicking "Get My Free Quote", I provide my electronic signature and express written consent for Final Expense Coverage to contact me.',

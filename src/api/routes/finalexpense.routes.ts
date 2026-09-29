@@ -45,7 +45,6 @@ function present(lead: FinalExpenseLead) {
     email: lead.email,
     zip: lead.zip,
     age: lead.age,
-    coverageAmount: lead.coverageAmount,
     isRepeat: lead.isRepeat,
     createdAt: lead.createdAt.toISOString(),
   };
@@ -56,6 +55,7 @@ function presentDetail(lead: FinalExpenseLeadDetail) {
   return {
     ...present(lead),
     dateOfBirth: lead.dateOfBirth,
+    universalLeadId: lead.universalLeadId,
     relatedLeadIds: lead.relatedLeadIds,
     rawPayload: lead.rawPayload,
     consent: {
