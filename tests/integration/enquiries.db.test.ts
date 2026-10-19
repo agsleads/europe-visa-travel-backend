@@ -31,7 +31,7 @@ describeDb("enquiries (PostgreSQL)", () => {
 
   beforeEach(async () => {
     // RESTART IDENTITY so id assertions do not depend on test ordering.
-    await query("TRUNCATE enquiries RESTART IDENTITY");
+    await query("TRUNCATE enquiries RESTART IDENTITY CASCADE");
   });
 
   afterAll(async () => {
@@ -91,7 +91,7 @@ describeDb("enquiries (PostgreSQL)", () => {
     // same millisecond would still compare equal — nudge the clock forward.
     await new Promise((resolve) => setTimeout(resolve, 25));
 
-    const updated = await service.updateStatus(created.id, "in_progress");
+    const updated = await service.updateStatus(created.id, "contacted");
 
     expect(updated.updatedAt.getTime()).toBeGreaterThan(created.updatedAt.getTime());
     expect(updated.createdAt.getTime()).toBe(created.createdAt.getTime());
@@ -102,19 +102,19 @@ describeDb("enquiries (PostgreSQL)", () => {
       await service.create(toCreateEnquiry({ email: `p${i}@example.com` }));
     }
 
-    const page = await service.list({ limit: 2, offset: 0 });
+    const page = await service.list({ sort: "createdAt", order: "desc", limit: 2, offset: 0 });
 
     expect(page.items).toHaveLength(2);
     expect(page.pagination.total).toBe(5);
     expect(page.items[0]!.id).toBeGreaterThan(page.items[1]!.id);
   });
 
-  it("purges only closed and spam rows past the retention window", async () => {
+  it("purges only lost rows past the retention window", async () => {
     const keep = await service.create(toCreateEnquiry());
     const drop = await service.create(toCreateEnquiry({ email: "old@example.com" }));
 
     await query("UPDATE enquiries SET created_at = NOW() - INTERVAL '400 days'");
-    await service.updateStatus(drop.id, "closed");
+    await service.updateStatus(drop.id, "lost");
 
     expect(await service.purge(365)).toBe(1);
     await expect(service.getById(keep.id)).resolves.toBeTruthy();
@@ -128,19 +128,21 @@ describeDb("enquiries (PostgreSQL)", () => {
       toCreateEnquiry({ name: "Tom Baker", email: "tom@elsewhere.test", destination: "Italy" }),
     );
 
-    const byName = await enquiryRepository.list({ q: "rahman", limit: 20, offset: 0 });
+    const byName = await enquiryRepository.list({ q: "rahman", sort: "createdAt", order: "desc", limit: 20, offset: 0 });
     expect(byName.items.map((e) => e.name)).toEqual(["Aisha Rahman"]);
 
-    const byEmail = await enquiryRepository.list({ q: "elsewhere", limit: 20, offset: 0 });
+    const byEmail = await enquiryRepository.list({ q: "elsewhere", sort: "createdAt", order: "desc", limit: 20, offset: 0 });
     expect(byEmail.items.map((e) => e.id)).toEqual([tom.id]);
 
-    const byDestination = await enquiryRepository.list({ q: "italy", limit: 20, offset: 0 });
+    const byDestination = await enquiryRepository.list({ q: "italy", sort: "createdAt", order: "desc", limit: 20, offset: 0 });
     expect(byDestination.items.map((e) => e.id)).toEqual([tom.id]);
 
     // References are stored uppercase; the search lowers both sides so an
     // operator can type one without matching its case.
     const byReference = await enquiryRepository.list({
       q: tom.reference.toLowerCase(),
+      sort: "createdAt",
+      order: "desc",
       limit: 20,
       offset: 0,
     });
@@ -155,33 +157,34 @@ describeDb("enquiries (PostgreSQL)", () => {
     await service.create(toCreateEnquiry({ name: "Ada Lovelace" }));
     const discounted = await service.create(toCreateEnquiry({ name: "Bob 50% Off" }));
 
-    const percent = await enquiryRepository.list({ q: "50%", limit: 20, offset: 0 });
+    const percent = await enquiryRepository.list({ q: "50%", sort: "createdAt", order: "desc", limit: 20, offset: 0 });
     expect(percent.items.map((e) => e.id)).toEqual([discounted.id]);
 
     // "_" must not act as a single-character wildcard: no name contains one.
-    const underscore = await enquiryRepository.list({ q: "a_a", limit: 20, offset: 0 });
+    const underscore = await enquiryRepository.list({ q: "a_a", sort: "createdAt", order: "desc", limit: 20, offset: 0 });
     expect(underscore.items).toEqual([]);
 
     // A bare "%" would match everything under LIKE. It matches only the row
     // that literally contains one.
-    const bare = await enquiryRepository.list({ q: "%", limit: 20, offset: 0 });
+    const bare = await enquiryRepository.list({ q: "%", sort: "createdAt", order: "desc", limit: 20, offset: 0 });
     expect(bare.items.map((e) => e.id)).toEqual([discounted.id]);
   });
 
   it("reports counts for every status, including those with no rows", async () => {
     const first = await service.create(toCreateEnquiry());
     await service.create(toCreateEnquiry());
-    await service.updateStatus(first.id, "closed");
+    await service.updateStatus(first.id, "lost");
 
     const stats = await enquiryRepository.stats();
 
     expect(stats.total).toBe(2);
     expect(stats.byStatus).toEqual({
       new: 1,
-      in_progress: 0,
-      responded: 0,
-      closed: 1,
-      spam: 0,
+      contacted: 0,
+      qualified: 0,
+      proposal: 0,
+      converted: 0,
+      lost: 1,
     });
     expect(stats.last7Days).toBe(2);
   });

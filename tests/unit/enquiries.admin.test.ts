@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { createApp } from "@/api/app";
 import { createEnquiryService, type EnquiryService } from "@/services/enquiry.service";
-import { createFakeRepository, validEnquiryPayload } from "../helpers/fakeRepository";
+import { createFakeRepository, fakeServiceDeps, validEnquiryPayload } from "../helpers/fakeRepository";
 
 const API_KEY = process.env.API_KEY as string;
 
@@ -21,7 +21,7 @@ describe("admin read endpoints", () => {
 
   beforeEach(() => {
     repository = createFakeRepository();
-    service = createEnquiryService(repository);
+    service = createEnquiryService(repository, fakeServiceDeps());
     app = createApp({ enquiryService: service });
   });
 
@@ -63,10 +63,11 @@ describe("admin read endpoints", () => {
       // A dashboard tile for a status with no enquiries must read 0, not vanish.
       expect(response.body.data.byStatus).toEqual({
         new: 2,
-        in_progress: 0,
-        responded: 0,
-        closed: 0,
-        spam: 0,
+        contacted: 0,
+        qualified: 0,
+        proposal: 0,
+        converted: 0,
+        lost: 0,
       });
       expect(response.body.data.last7Days).toBe(2);
     });
@@ -78,12 +79,12 @@ describe("admin read endpoints", () => {
       await request(app)
         .patch(`/api/v1/enquiries/${id}/status`)
         .set("x-api-key", API_KEY)
-        .send({ status: "closed" });
+        .send({ status: "lost" });
 
       const response = await authed("/api/v1/enquiries/stats");
 
       expect(response.body.data.byStatus.new).toBe(0);
-      expect(response.body.data.byStatus.closed).toBe(1);
+      expect(response.body.data.byStatus.lost).toBe(1);
       expect(response.body.data.total).toBe(1);
     });
   });
@@ -136,9 +137,9 @@ describe("admin read endpoints", () => {
       await request(app)
         .patch(`/api/v1/enquiries/${id}/status`)
         .set("x-api-key", API_KEY)
-        .send({ status: "closed" });
+        .send({ status: "lost" });
 
-      expect((await authed("/api/v1/enquiries?q=aisha&status=closed")).body.data).toHaveLength(1);
+      expect((await authed("/api/v1/enquiries?q=aisha&status=lost")).body.data).toHaveLength(1);
       expect((await authed("/api/v1/enquiries?q=aisha&status=new")).body.data).toHaveLength(0);
     });
 

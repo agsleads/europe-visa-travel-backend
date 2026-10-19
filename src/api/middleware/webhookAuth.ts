@@ -180,23 +180,3 @@ export const socialSecurityWebhookAuth = createSharedSecretAuth({
   label: "Social Security webhook",
 });
 
-/**
- * Auth for VoxEnrise lead intake (`x-voxenrise-api-key`).
- *
- * Called an API key rather than a signature because that is what the client
- * was handed and what their integration guide calls it. The mechanism is the
- * same shared secret as every producer above; only the wording differs.
- *
- * Its own header name rather than the `x-api-key` that `apiKeyAuth` reads.
- * Two different secrets behind one header name is a trap: a developer who
- * sends the operator key to this endpoint gets a 401 with nothing to
- * distinguish it from a mistyped key. Same limit as the others — a static
- * secret proves who is calling, not that the body was not altered in transit.
- */
-export const voxenriseApiKeyAuth = createSharedSecretAuth({
-  header: "x-voxenrise-api-key",
-  secret: () => env.VOXENRISE_API_KEY,
-  envName: "VOXENRISE_API_KEY",
-  label: "VoxEnrise intake",
-  invalidMessage: "Missing or invalid API key.",
-});

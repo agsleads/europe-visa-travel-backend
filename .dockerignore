@@ -1,0 +1,16 @@
+# Never let a real .env into an image layer.
+.env
+.env.*
+!.env.example
+
+node_modules
+dist
+coverage
+.git
+.github
+tests
+*.log
+README.md
+
+Dockerfile
+.dockerignore

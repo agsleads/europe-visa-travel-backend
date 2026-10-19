@@ -150,24 +150,3 @@ export const socialSecurityIntakeLimiter = rateLimit({
   },
 });
 
-/**
- * VoxEnrise lead intake.
- *
- * Its own bucket for the reason the others have one: every lead arrives from
- * the client's own server, so the whole feed shares a handful of IPs and a
- * shared counter would let this client throttle one of our sites, or the
- * reverse.
- *
- * Higher than the others at 120/minute. This is a bulk feed rather than a
- * human filling in a form, and the payload is one short field — the ceiling
- * is there to stop a runaway loop, not to pace a person.
- */
-export const voxenriseIntakeLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 120,
-  standardHeaders: "draft-7",
-  legacyHeaders: false,
-  message: {
-    error: { code: "rate_limited", message: "Too many requests. Please retry shortly." },
-  },
-});

@@ -46,12 +46,42 @@ All under `/api/v1`, all requiring `x-api-key`.
 | Method | Path                   | Purpose                                    |
 | ------ | ---------------------- | ------------------------------------------ |
 | POST   | `/enquiries`           | Create an enquiry. `201` with the reference. |
-| GET    | `/enquiries`           | List, newest first. `?status=&q=&limit=&offset=` |
-| GET    | `/enquiries/stats`     | Counts per status, total, and the trailing week. |
+| GET    | `/enquiries`           | List. Filters `?status=&priority=&assignedTo=&destination=&visaType=&q=&from=&to=`, order `?sort=&order=`, page `?limit=&offset=` |
+| GET    | `/enquiries/stats`     | Pipeline counts, by status/priority/destination/visa type/assignee, monthly volume. `?assignedTo=&from=&to=` |
+| GET    | `/enquiries/facets`    | Distinct destinations and visa types, for filter controls. |
+| GET    | `/enquiries/follow-ups`| Follow-ups across enquiries. `?assignedTo=&open=true&limit=` |
+| GET    | `/enquiries/activity`  | Latest activity across enquiries. `?assignedTo=&limit=` |
+| POST   | `/enquiries/bulk-assign` | `{ ids, assignee }` — assign many; `assignee: null` unassigns. |
 | GET    | `/enquiries/:id`       | Fetch one.                                 |
-| PATCH  | `/enquiries/:id/status`| `new · in_progress · responded · closed · spam` |
+| PATCH  | `/enquiries/:id`       | `{ status?, priority? }`                   |
+| PATCH  | `/enquiries/:id/status`| `{ status }` — kept for status-only callers. |
+| PUT    | `/enquiries/:id/assignee` | `{ assignee: { id, name } }` to assign or reassign, `null` to unassign. |
+| POST   | `/enquiries/:id/contacts` | `{ channel: call · email · whatsapp }` — logs outreach, stamps `lastContactAt`. |
+| GET    | `/enquiries/:id/activity` | The enquiry's history, newest first.    |
+| GET/POST | `/enquiries/:id/notes` | List / add notes.                        |
+| PATCH/DELETE | `/enquiries/:id/notes/:noteId` | Edit / delete a note.         |
+| GET/POST | `/enquiries/:id/follow-ups` | List / schedule follow-ups `{ title, dueAt }`. |
+| PATCH/DELETE | `/enquiries/:id/follow-ups/:followUpId` | `{ completed }` / delete. |
 | GET    | `/health`              | Readiness — checks PostgreSQL, `503` if down. |
 | GET    | `/health/live`         | Liveness — process only, never the database. |
+
+### Enquiries as CRM leads
+
+Every enquiry is worked as a lead by the CRM (`crm-frontend`) and the EVC admin
+console:
+
+- **Status** is the pipeline: `new → contacted → qualified → proposal →
+  converted`, or `lost`. Migration 014 mapped the old inbox statuses across:
+  `in_progress`/`responded` → `contacted`, `closed`/`spam` → `lost`.
+- **Priority** is `low · medium · high · urgent`, default `medium`.
+- **Assignee** is stored as an opaque CRM user id *and* display name, because
+  the CRM's user directory lives outside this service.
+- **Every change is recorded** in `enquiry_activities` in the same transaction
+  as the change itself: creation, (re/un)assignment, status and priority
+  changes, logged calls/emails/WhatsApps, notes and follow-ups.
+- **Attribution** comes from `x-actor-id` / `x-actor-name` headers, asserted
+  by the calling server. It is recorded, never used to grant access: which rep
+  may see which lead is the calling console's responsibility.
 
 ### Final Expense Coverage leads
 
@@ -148,8 +178,9 @@ and nothing binds a port as a side effect of `import`.
   logger; log the enquiry id or reference instead.
 - **The client IP is never stored raw** — only the salted hash the frontend
   already computes for rate limiting, for abuse correlation and nothing else.
-- **Retention** is `enquiryService.purge()`, deleting closed and spam rows past
-  `ENQUIRY_RETENTION_DAYS`. It is not scheduled yet — see below.
+- **Retention** is `enquiryService.purge()`, deleting `lost` rows past
+  `ENQUIRY_RETENTION_DAYS` together with their notes, follow-ups and activity.
+  Converted leads are customers and are kept. It is not scheduled yet — see below.
 
 ## Before production
 

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { createApp } from "@/api/app";
 import { createEnquiryService, type EnquiryService } from "@/services/enquiry.service";
-import { createFakeRepository, validEnquiryPayload } from "../helpers/fakeRepository";
+import { createFakeRepository, fakeServiceDeps, validEnquiryPayload } from "../helpers/fakeRepository";
 
 const API_KEY = process.env.API_KEY as string;
 
@@ -20,7 +20,7 @@ describe("POST /api/v1/enquiries", () => {
 
   beforeEach(() => {
     repository = createFakeRepository();
-    service = createEnquiryService(repository);
+    service = createEnquiryService(repository, fakeServiceDeps());
     app = createApp({ enquiryService: service });
   });
 
@@ -139,7 +139,7 @@ describe("read endpoints", () => {
 
   beforeEach(() => {
     repository = createFakeRepository();
-    app = createApp({ enquiryService: createEnquiryService(repository) });
+    app = createApp({ enquiryService: createEnquiryService(repository, fakeServiceDeps()) });
   });
 
   const auth = (r: request.Test) => r.set("x-api-key", API_KEY);
@@ -181,8 +181,8 @@ describe("read endpoints", () => {
     const id = created.body.data.id;
 
     await expect(
-      auth(request(app).patch(`/api/v1/enquiries/${id}/status`)).send({ status: "responded" }),
-    ).resolves.toMatchObject({ status: 200, body: { data: { status: "responded" } } });
+      auth(request(app).patch(`/api/v1/enquiries/${id}/status`)).send({ status: "contacted" }),
+    ).resolves.toMatchObject({ status: 200, body: { data: { status: "contacted" } } });
 
     await expect(
       auth(request(app).patch(`/api/v1/enquiries/${id}/status`)).send({ status: "archived" }),
@@ -197,7 +197,7 @@ describe("read endpoints", () => {
 });
 
 describe("infrastructure", () => {
-  const build = () => createApp({ enquiryService: createEnquiryService(createFakeRepository()) });
+  const build = () => createApp({ enquiryService: createEnquiryService(createFakeRepository(), fakeServiceDeps()) });
 
   it("reports liveness without touching the database", async () => {
     const response = await request(build()).get("/health/live");

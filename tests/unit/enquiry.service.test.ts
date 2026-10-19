@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppError, NotFoundError } from "@/lib/errors";
 import { createEnquiryService, type EnquiryService } from "@/services/enquiry.service";
-import { createFakeRepository, toCreateEnquiry } from "../helpers/fakeRepository";
+import { createFakeRepository, fakeServiceDeps, toCreateEnquiry } from "../helpers/fakeRepository";
 
 describe("enquiryService", () => {
   let repository: ReturnType<typeof createFakeRepository>;
@@ -10,7 +10,7 @@ describe("enquiryService", () => {
 
   beforeEach(() => {
     repository = createFakeRepository();
-    service = createEnquiryService(repository);
+    service = createEnquiryService(repository, fakeServiceDeps());
   });
 
   describe("create", () => {
@@ -93,22 +93,22 @@ describe("enquiryService", () => {
     });
 
     it("returns pagination metadata alongside the page", async () => {
-      const result = await service.list({ limit: 2, offset: 0 });
+      const result = await service.list({ sort: "createdAt", order: "desc", limit: 2, offset: 0 });
       expect(result.items).toHaveLength(2);
       expect(result.pagination).toMatchObject({ total: 5, limit: 2, offset: 0, hasMore: true });
     });
 
     it("reports hasMore: false on the final page", async () => {
-      const result = await service.list({ limit: 2, offset: 4 });
+      const result = await service.list({ sort: "createdAt", order: "desc", limit: 2, offset: 4 });
       expect(result.items).toHaveLength(1);
       expect(result.pagination.hasMore).toBe(false);
     });
 
     it("filters by status", async () => {
       const [first] = repository.rows;
-      await service.updateStatus(first!.id, "closed");
+      await service.updateStatus(first!.id, "lost");
 
-      await expect(service.list({ status: "closed", limit: 20, offset: 0 })).resolves.toMatchObject(
+      await expect(service.list({ status: "lost", sort: "createdAt", order: "desc", limit: 20, offset: 0 })).resolves.toMatchObject(
         { pagination: { total: 1 } },
       );
     });
@@ -117,25 +117,25 @@ describe("enquiryService", () => {
   describe("updateStatus", () => {
     it("updates a known enquiry", async () => {
       const created = await service.create(toCreateEnquiry());
-      await expect(service.updateStatus(created.id, "responded")).resolves.toMatchObject({
-        status: "responded",
+      await expect(service.updateStatus(created.id, "contacted")).resolves.toMatchObject({
+        status: "contacted",
       });
     });
 
     it("throws NotFound rather than silently succeeding on an unknown id", async () => {
-      await expect(service.updateStatus(999, "closed")).rejects.toBeInstanceOf(NotFoundError);
+      await expect(service.updateStatus(999, "lost")).rejects.toBeInstanceOf(NotFoundError);
     });
   });
 
   describe("purge", () => {
-    it("deletes only closed and spam rows past the retention window", async () => {
+    it("deletes only lost rows past the retention window", async () => {
       const keep = await service.create(toCreateEnquiry());
       const drop = await service.create(toCreateEnquiry({ email: "old@example.com" }));
 
       const old = new Date(Date.now() - 400 * 86_400_000);
       for (const row of repository.rows) row.createdAt = old;
-      // Only the closed one is eligible; an open enquiry is still needed.
-      await service.updateStatus(drop.id, "closed");
+      // Only the lost one is eligible; an open enquiry is still needed.
+      await service.updateStatus(drop.id, "lost");
 
       expect(await service.purge(365)).toBe(1);
       expect(repository.rows.map((r) => r.id)).toEqual([keep.id]);

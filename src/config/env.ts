@@ -157,23 +157,6 @@ const envSchema = z
     ),
 
     /**
-     * The API key issued to the VoxEnrise client, sent as `x-voxenrise-api-key`
-     * on lead intake.
-     *
-     * Its own value for the reason every producer has one: a leak or rotation
-     * of one must not touch another. This one is held by a third party rather
-     * than a site we deploy, so rotating it is a conversation with them —
-     * which is an argument for it being separate, not for sharing it. Same
-     * blank-means-absent handling and 16-character floor. Outside production
-     * an unset key leaves intake unauthenticated with a warning; in production
-     * `voxenriseApiKeyAuth` fails closed with a 401.
-     */
-    VOXENRISE_API_KEY: z.preprocess(
-      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-      z.string().min(16, "VOXENRISE_API_KEY must be at least 16 characters.").optional(),
-    ),
-
-    /**
      * Onyx utilization API. The key is sent as-is in the `X-API-Key` header
      * and never logged. Blank means absent: the endpoint then answers 503
      * instead of calling Onyx with no credential.
