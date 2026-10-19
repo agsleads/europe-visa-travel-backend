@@ -8,6 +8,7 @@ import { env, isProduction, isTest } from "@/config/env";
 import { errorHandler, notFoundHandler } from "@/api/middleware/errorHandler";
 import { requestId, requestIdOf } from "@/api/middleware/requestId";
 import { enquiriesRouter } from "@/api/routes/enquiries.routes";
+import { usersRouter } from "@/api/routes/users.routes";
 import { finalExpenseRouter } from "@/api/routes/finalexpense.routes";
 import { seniorHealthRouter } from "@/api/routes/seniorhealth.routes";
 import { affordablePlanRouter } from "@/api/routes/affordableplan.routes";
@@ -18,6 +19,7 @@ import { onyxRouter } from "@/api/routes/onyx.routes";
 import { healthRouter } from "@/api/routes/health.routes";
 import { logger } from "@/lib/logger";
 import type { EnquiryService } from "@/services/enquiry.service";
+import type { UserService } from "@/services/user.service";
 import type { FinalExpenseService } from "@/services/finalexpense.service";
 import type { LeadService } from "@/services/lead.service";
 import type { SeniorHealthService } from "@/services/seniorhealth.service";
@@ -34,6 +36,7 @@ import type { OnyxClient } from "@/services/onyx.client";
 export function createApp(
   deps: {
     enquiryService?: EnquiryService;
+    userService?: UserService;
     leadService?: LeadService;
     finalExpenseService?: FinalExpenseService;
     seniorHealthService?: SeniorHealthService;
@@ -104,6 +107,8 @@ export function createApp(
      version onto an unversioned path that a deployed frontend already calls
      is not. */
   app.use("/api/v1/enquiries", enquiriesRouter(deps.enquiryService));
+  /* The CRM's user directory: the people who work enquiries. */
+  app.use("/api/v1/users", usersRouter(deps.userService));
   /* Road Cover lead intake and its operator reads. Namespaced by producer
      rather than mounted as a second top-level resource: the payload, the
      credential and the retention rules all belong to that partner, and a flat

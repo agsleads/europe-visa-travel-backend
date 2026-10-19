@@ -65,6 +65,31 @@ All under `/api/v1`, all requiring `x-api-key`.
 | GET    | `/health`              | Readiness — checks PostgreSQL, `503` if down. |
 | GET    | `/health/live`         | Liveness — process only, never the database. |
 
+### CRM users
+
+The CRM's user directory (`crm_users`, migration 015). All under
+`/api/v1/users`, all requiring `x-api-key`. Responses never include the
+password hash.
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| GET    | `/users` | List, newest first. `?q=&role=&status=` |
+| POST   | `/users` | `{ username, name, email, phone?, role, status, jobTitle?, password }` — `409` if the username or email exists. |
+| GET    | `/users/:id` | Fetch one. |
+| PATCH  | `/users/:id` | Any of `username, name, email, phone, role, status, jobTitle, avatarUrl`. |
+| DELETE | `/users/:id` | `204`. |
+| PUT    | `/users/:id/password` | Admin reset: `{ password }`. |
+| POST   | `/users/:id/password/change` | Self-service: `{ currentPassword, newPassword }`. |
+| POST   | `/users/authenticate` | `{ login, password }` — `login` is the username or email → the user; `401` wrong credentials, `403` deactivated. |
+
+Passwords are hashed with scrypt (node:crypto). The last active admin cannot be
+deleted, deactivated or demoted (`409 last_admin`). Create the first admin with:
+
+```
+CRM_ADMIN_PASSWORD='…' npx tsx src/db/create-crm-admin.ts <username> <email> "<name>" ["<phone>"]
+# in the container: node dist/db/create-crm-admin.js …
+```
+
 ### Enquiries as CRM leads
 
 Every enquiry is worked as a lead by the CRM (`crm-frontend`) and the EVC admin
