@@ -150,3 +150,32 @@ export const socialSecurityIntakeLimiter = rateLimit({
   },
 });
 
+
+/**
+ * Onyx availability, called straight from the lead form in a browser.
+ *
+ * This is the only unauthenticated route on this API, so this limiter is the
+ * whole of its protection. Every call spends our paid Onyx credential and
+ * pushes a person's details into Onyx under our account, so the ceiling is set
+ * for one human filling in one form, not for a server feeding many.
+ *
+ * Keyed on the client IP, which is real because `app.set("trust proxy", 1)`
+ * matches the single Caddy hop in front of this service. Without that the
+ * proxy's own address would be the key and the limit would be global.
+ *
+ * KNOWN LIMIT -- the store is in-process, so the effective ceiling is
+ * (max x instances). One instance runs today; move to `rate-limit-redis`
+ * before scaling out, or this becomes a limit in name only.
+ */
+export const onyxAvailabilityLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    error: {
+      code: "rate_limited",
+      message: "Too many availability checks. Please wait a moment and try again.",
+    },
+  },
+});

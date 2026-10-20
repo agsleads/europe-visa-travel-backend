@@ -3,24 +3,39 @@ import { Router } from "express";
 import { apiKeyAuth } from "@/api/middleware/apiKeyAuth";
 import { asyncHandler } from "@/api/middleware/asyncHandler";
 import { requestIdOf } from "@/api/middleware/requestId";
+import { onyxAvailabilityLimiter } from "@/api/middleware/rateLimit";
 import { validate } from "@/api/middleware/validate";
 import { onyxUtilizationSchema, type OnyxUtilizationPayload } from "@/domain/onyx.schema";
 import { logger } from "@/lib/logger";
 import { createOnyxClient, type OnyxClient } from "@/services/onyx.client";
 
 /*
- * Two views of the same Onyx utilization ping. Neither stores anything, and
- * both are authenticated with the same `x-api-key` as the rest of this API:
- * they spend a paid third-party credential, so leaving either open would let
- * anyone push data into Onyx under our account.
+ * Two views of the same Onyx utilization ping. Neither stores anything.
  *
  * POST /api/v1/onyx/utilization
- *   Onyx's answer verbatim, commercial terms included. Server-to-server only.
+ *   Onyx's answer verbatim, commercial terms included. Server-to-server only,
+ *   and still behind `x-api-key`.
  *   200  { data: <Onyx's response> }
  *
  * POST /api/v1/onyx/availability
- *   The same ping, reduced to what a browser may see. For the lead form.
+ *   The same ping, reduced to what a browser may see. PUBLIC - no API key.
  *   200  { data: { available } }
+ *
+ * `availability` is deliberately unauthenticated. It is called from a static
+ * lead form that has no server of its own, so the only way to authenticate it
+ * would be to ship a key in the page -- and a key readable by every visitor is
+ * not a key, it is an announcement. Better an endpoint that is honestly public
+ * and rate limited than one that pretends to be guarded.
+ *
+ * What stops abuse instead:
+ *   - `onyxAvailabilityLimiter`, 10/minute per IP. This is the only protection
+ *     on the route, so do not remove it without replacing it.
+ *   - CORS, which allowlists the form's origin for browsers.
+ *   - `publicView`, which withholds the transfer number and our buy rate.
+ *
+ * What it does NOT stop: a script calling it directly. CORS binds browsers,
+ * not curl. Each call still spends our Onyx credential, so watch the Onyx
+ * spend after this goes live and tighten the limit if it is being farmed.
  *
  * Both share the failure cases:
  *   422  The body failed validation here; Onyx was not called.
@@ -106,9 +121,11 @@ export function onyxRouter(client: OnyxClient = createOnyxClient()): Router {
     handler((body) => body),
   );
 
+  /* No apiKeyAuth: see the note at the top of this file. The limiter is not
+     optional here -- it is what the API key used to be. */
   router.post(
     "/availability",
-    apiKeyAuth,
+    onyxAvailabilityLimiter,
     validate(onyxUtilizationSchema),
     handler(publicView),
   );
