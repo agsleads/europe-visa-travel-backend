@@ -173,6 +173,16 @@ const envSchema = z
     /** Comma-separated origins allowed to call the API from a browser. */
     CORS_ORIGINS: z.string().default("").transform(csv),
 
+    /**
+     * Ceiling for the two PUBLIC Onyx routes, per IP per minute.
+     *
+     * Its own knob because those routes carry no API key: this number is the
+     * whole of their protection, and it spends a paid third-party credential
+     * on every call. Separate from RATE_LIMIT_MAX so tightening the public
+     * surface does not also throttle the authenticated operator reads.
+     */
+    ONYX_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(10_000).default(10),
+
     RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(10 * 60 * 1000),
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
 

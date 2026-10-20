@@ -1,9 +1,8 @@
 import { Router } from "express";
 
-import { apiKeyAuth } from "@/api/middleware/apiKeyAuth";
 import { asyncHandler } from "@/api/middleware/asyncHandler";
 import { requestIdOf } from "@/api/middleware/requestId";
-import { onyxAvailabilityLimiter } from "@/api/middleware/rateLimit";
+import { onyxAvailabilityLimiter, onyxUtilizationLimiter } from "@/api/middleware/rateLimit";
 import { validate } from "@/api/middleware/validate";
 import { onyxUtilizationSchema, type OnyxUtilizationPayload } from "@/domain/onyx.schema";
 import { logger } from "@/lib/logger";
@@ -13,9 +12,20 @@ import { createOnyxClient, type OnyxClient } from "@/services/onyx.client";
  * Two views of the same Onyx utilization ping. Neither stores anything.
  *
  * POST /api/v1/onyx/utilization
- *   Onyx's answer verbatim, commercial terms included. Server-to-server only,
- *   and still behind `x-api-key`.
+ *   Onyx's answer verbatim, commercial terms included. PUBLIC - no API key.
  *   200  { data: <Onyx's response> }
+ *
+ *   WHAT THIS PUBLISHES. Onyx returns { phone_number, available, duration,
+ *   bid, billing_type }. `bid` is our buy rate per call and `phone_number` is
+ *   the transfer destination. Unauthenticated, both are readable by anyone who
+ *   finds this URL, competitors included. The operator page hides them from
+ *   its own display, but that is cosmetic - the full body still reaches the
+ *   browser and shows in the network tab.
+ *
+ *   It is open because its caller is a static operator page with no server of
+ *   its own, so the only alternative was shipping a key that also unlocks
+ *   /enquiries and /users. A narrow credential scoped to these two routes
+ *   would be the better answer if this ever needs tightening.
  *
  * POST /api/v1/onyx/availability
  *   The same ping, reduced to what a browser may see. PUBLIC - no API key.
@@ -114,9 +124,12 @@ export function onyxRouter(client: OnyxClient = createOnyxClient()): Router {
       });
     });
 
+  /* No apiKeyAuth: see the note at the top of this file. The limiter is not
+     optional here -- it is what the API key used to be, and this route leaks
+     commercial terms if it is farmed. */
   router.post(
     "/utilization",
-    apiKeyAuth,
+    onyxUtilizationLimiter,
     validate(onyxUtilizationSchema),
     handler((body) => body),
   );

@@ -24,3 +24,9 @@ process.env.SOCIALSECURITY_WEBHOOK_SECRET ??= "test-socialsecurity-secret-012345
 /* Unit tests never open a connection — the value only has to satisfy the env
    schema. Integration tests override it with TEST_DATABASE_URL. */
 process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgresql://localhost:5432/evc_test";
+
+/* The two public Onyx routes are limited to 10/min/IP in production, and the
+   limiter is a module singleton whose counter accumulates across every test in
+   a file. Raised here so the suite exercises the routes rather than the
+   limiter; the production default lives in src/config/env.ts. */
+process.env.ONYX_RATE_LIMIT_MAX ??= "10000";

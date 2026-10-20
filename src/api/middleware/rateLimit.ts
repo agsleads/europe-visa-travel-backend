@@ -169,13 +169,39 @@ export const socialSecurityIntakeLimiter = rateLimit({
  */
 export const onyxAvailabilityLimiter = rateLimit({
   windowMs: 60_000,
-  max: 10,
+  max: env.ONYX_RATE_LIMIT_MAX,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: {
     error: {
       code: "rate_limited",
       message: "Too many availability checks. Please wait a moment and try again.",
+    },
+  },
+});
+
+/**
+ * Onyx utilization, called from the operator's browser form.
+ *
+ * Its own bucket rather than sharing `onyxAvailabilityLimiter`: an
+ * `express-rate-limit` instance keeps one counter per key, so sharing one
+ * would let traffic on the public lead form throttle the operator tool and
+ * vice versa.
+ *
+ * Like the availability route this is unauthenticated, so this limiter is the
+ * whole of its protection -- and this route returns Onyx's answer verbatim,
+ * commercial terms included. Tighter than availability because the audience
+ * is a handful of operators, not every visitor to a lead form.
+ */
+export const onyxUtilizationLimiter = rateLimit({
+  windowMs: 60_000,
+  max: env.ONYX_RATE_LIMIT_MAX,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    error: {
+      code: "rate_limited",
+      message: "Too many utilization checks. Please wait a moment and try again.",
     },
   },
 });

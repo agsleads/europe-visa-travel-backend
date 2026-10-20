@@ -178,11 +178,42 @@ describe("POST /api/v1/onyx/utilization", () => {
     expect(called).toBe(false);
   });
 
-  it("rejects a request without the API key", async () => {
-    const app = appWith(async () => new Response("{}", { status: 200 }));
+  /* Deliberately public, like /availability. Its caller is a static operator
+     page with no server of its own, so the alternative was shipping a key
+     that also unlocks /enquiries and /users. The rate limiter is what guards
+     it now; see the note at the top of onyx.routes.ts. */
+  it("is PUBLIC - serves a request carrying no API key at all", async () => {
+    const app = appWith(
+      async () =>
+        new Response(JSON.stringify({ available: true, phone_number: "+15550001111", bid: 42 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
 
     const response = await request(app).post(PATH).send(PAYLOAD);
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(200);
+  });
+
+  it("returns Onyx's body verbatim, commercial terms included", async () => {
+    const app = appWith(
+      async () =>
+        new Response(JSON.stringify({ available: true, phone_number: "+15550001111", bid: 42 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+
+    const response = await request(app).post(PATH).send(PAYLOAD);
+
+    /* Asserted so the exposure is explicit rather than incidental: this route
+       publishes the transfer number and our buy rate to any caller. If that
+       ever stops being acceptable, this test is the one that should fail. */
+    expect(response.body.data).toEqual({
+      available: true,
+      phone_number: "+15550001111",
+      bid: 42,
+    });
   });
 });
 
@@ -316,10 +347,22 @@ describe("POST /api/v1/onyx/availability", () => {
     expect(body).not.toContain("bid");
   });
 
-  it("leaves /utilization authenticated - opening availability must not open it too", async () => {
-    const app = appWith(async () => new Response("{}", { status: 200 }));
+  it("still reduces the body, even though /utilization is now open too", async () => {
+    const app = appWith(
+      async () =>
+        new Response(JSON.stringify({ available: true, phone_number: "+15550001111", bid: 42 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
 
-    const response = await request(app).post("/api/v1/onyx/utilization").send(PAYLOAD);
-    expect(response.status).toBe(401);
+    /* The two routes are open to the same callers now, so the ONLY thing
+       separating them is what each returns. That distinction is the whole
+       reason /availability still exists. */
+    const avail = await request(app).post(AVAILABILITY).send(PAYLOAD);
+    const util = await request(app).post("/api/v1/onyx/utilization").send(PAYLOAD);
+
+    expect(avail.body.data).toEqual({ available: true });
+    expect(util.body.data).toHaveProperty("bid");
   });
 });
