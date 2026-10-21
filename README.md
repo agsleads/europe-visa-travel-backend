@@ -90,6 +90,25 @@ CRM_ADMIN_PASSWORD='…' npx tsx src/db/create-crm-admin.ts <username> <email> "
 # in the container: node dist/db/create-crm-admin.js …
 ```
 
+### CRM notifications
+
+In-app notifications for CRM users (`crm_notifications`, migration 016). All
+under `/api/v1/notifications`, all requiring `x-api-key`. Every route on an
+existing notification takes `?userId=` and only touches that user's own; a
+notification is deleted with its user.
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| GET    | `/notifications?userId=` | Newest first, with `unreadCount`. `&unread=true&limit=` |
+| POST   | `/notifications` | `{ recipients[], type, title, message, link? }` — one per recipient; unknown users skipped. |
+| GET    | `/notifications/:id?userId=` | Fetch one. |
+| PATCH  | `/notifications/:id?userId=` | `{ read }` |
+| POST   | `/notifications/read-all` | `{ userId }` → `{ updated }` |
+| DELETE | `/notifications/:id?userId=` | `204`. |
+
+Types: `lead_assigned · status_changed · follow_up_due · user_added · lead_converted`.
+`link` must be an in-app path (`/leads/42`), never an absolute URL.
+
 ### Enquiries as CRM leads
 
 Every enquiry is worked as a lead by the CRM (`crm-frontend`) and the EVC admin

@@ -9,6 +9,7 @@ import { errorHandler, notFoundHandler } from "@/api/middleware/errorHandler";
 import { requestId, requestIdOf } from "@/api/middleware/requestId";
 import { enquiriesRouter } from "@/api/routes/enquiries.routes";
 import { usersRouter } from "@/api/routes/users.routes";
+import { notificationsRouter } from "@/api/routes/notifications.routes";
 import { finalExpenseRouter } from "@/api/routes/finalexpense.routes";
 import { seniorHealthRouter } from "@/api/routes/seniorhealth.routes";
 import { affordablePlanRouter } from "@/api/routes/affordableplan.routes";
@@ -20,6 +21,7 @@ import { healthRouter } from "@/api/routes/health.routes";
 import { logger } from "@/lib/logger";
 import type { EnquiryService } from "@/services/enquiry.service";
 import type { UserService } from "@/services/user.service";
+import type { NotificationService } from "@/services/notification.service";
 import type { FinalExpenseService } from "@/services/finalexpense.service";
 import type { LeadService } from "@/services/lead.service";
 import type { SeniorHealthService } from "@/services/seniorhealth.service";
@@ -37,6 +39,7 @@ export function createApp(
   deps: {
     enquiryService?: EnquiryService;
     userService?: UserService;
+    notificationService?: NotificationService;
     leadService?: LeadService;
     finalExpenseService?: FinalExpenseService;
     seniorHealthService?: SeniorHealthService;
@@ -109,6 +112,8 @@ export function createApp(
   app.use("/api/v1/enquiries", enquiriesRouter(deps.enquiryService));
   /* The CRM's user directory: the people who work enquiries. */
   app.use("/api/v1/users", usersRouter(deps.userService));
+  /* In-app notifications for CRM users. */
+  app.use("/api/v1/notifications", notificationsRouter(deps.notificationService));
   /* Road Cover lead intake and its operator reads. Namespaced by producer
      rather than mounted as a second top-level resource: the payload, the
      credential and the retention rules all belong to that partner, and a flat

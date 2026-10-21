@@ -25,6 +25,15 @@ export const logger = pino({
       "req.headers.authorization",
       "req.headers.cookie",
       'req.headers["x-api-key"]',
+      /* Every producer's webhook secret arrives in its own header, so each
+         needs its own path -- none is covered by x-api-key above. Without
+         these, a partner's shared secret is written to disk on every lead. */
+      'req.headers["x-roadcover-signature"]',
+      'req.headers["x-finalexpense-signature"]',
+      'req.headers["x-seniorhealth-signature"]',
+      'req.headers["x-affordableplan-signature"]',
+      'req.headers["x-autoinsurance-signature"]',
+      'req.headers["x-socialsecurity-signature"]',
       "req.body",
       "res.body",
       "body",

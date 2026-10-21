@@ -21,7 +21,7 @@ describeDb("CRM users (PostgreSQL)", () => {
   }, 30_000);
 
   beforeEach(async () => {
-    await query("TRUNCATE crm_users");
+    await query("TRUNCATE crm_users CASCADE");
   });
 
   afterAll(async () => {
