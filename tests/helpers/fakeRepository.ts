@@ -1,6 +1,9 @@
 import {
   ENQUIRY_PRIORITIES,
   ENQUIRY_STATUSES,
+  STATUS_GROUP,
+  STATUS_GROUPS,
+  type StatusGroup,
   type Actor,
   type CreateEnquiry,
   type Enquiry,
@@ -33,6 +36,7 @@ export function createFakeRepository(): EnquiryRepository & { rows: Enquiry[]; f
   const matches = (r: Enquiry, q: Partial<ListEnquiriesQuery>) => {
     const needle = q.q?.toLowerCase();
     if (q.status && r.status !== q.status) return false;
+    if (q.group && STATUS_GROUP[r.status] !== q.group) return false;
     if (q.priority && r.priority !== q.priority) return false;
     if (q.assignedTo === "unassigned" && r.assignedTo) return false;
     if (q.assignedTo && q.assignedTo !== "unassigned" && r.assignedTo?.id !== q.assignedTo) return false;
@@ -120,12 +124,15 @@ export function createFakeRepository(): EnquiryRepository & { rows: Enquiry[]; f
         byStatus[row.status] += 1;
         byPriority[row.priority] += 1;
       }
+      const byGroup = Object.fromEntries(STATUS_GROUPS.map((g) => [g, 0])) as Record<StatusGroup, number>;
+      for (const row of scoped) byGroup[STATUS_GROUP[row.status]] += 1;
       const now = Date.now();
       const assigned = scoped.filter((r) => r.assignedTo).length;
       return {
         total: scoped.length,
         byStatus,
         byPriority,
+        byGroup,
         assigned,
         unassigned: scoped.length - assigned,
         last7Days: scoped.filter((r) => r.createdAt.getTime() >= now - 7 * 86_400_000).length,
@@ -180,7 +187,7 @@ export function createFakeRepository(): EnquiryRepository & { rows: Enquiry[]; f
 
     async purgeOlderThan(days: number) {
       const cutoff = Date.now() - days * 86_400_000;
-      const doomed = rows.filter((r) => r.createdAt.getTime() < cutoff && r.status === "lost");
+      const doomed = rows.filter((r) => r.createdAt.getTime() < cutoff && STATUS_GROUP[r.status] === "lost");
       for (const row of doomed) rows.splice(rows.indexOf(row), 1);
       return doomed.length;
     },

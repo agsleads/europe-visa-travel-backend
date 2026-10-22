@@ -63,11 +63,22 @@ describe("admin read endpoints", () => {
       // A dashboard tile for a status with no enquiries must read 0, not vanish.
       expect(response.body.data.byStatus).toEqual({
         new: 2,
-        contacted: 0,
-        qualified: 0,
-        proposal: 0,
-        converted: 0,
-        lost: 0,
+        no_response: 0,
+        follow_up_required: 0,
+        conversation_ongoing: 0,
+        call_scheduled: 0,
+        call_rescheduled: 0,
+        interested: 0,
+        documents_pending: 0,
+        awaiting_payment: 0,
+        pre_closed: 0,
+        travel_date_deferred: 0,
+        closed: 0,
+        visa_shopping: 0,
+        irrelevant_inquiry: 0,
+        not_eligible: 0,
+        not_interested: 0,
+        duplicate_lead: 0,
       });
       expect(response.body.data.last7Days).toBe(2);
     });
@@ -79,12 +90,12 @@ describe("admin read endpoints", () => {
       await request(app)
         .patch(`/api/v1/enquiries/${id}/status`)
         .set("x-api-key", API_KEY)
-        .send({ status: "lost" });
+        .send({ status: "not_interested" });
 
       const response = await authed("/api/v1/enquiries/stats");
 
       expect(response.body.data.byStatus.new).toBe(0);
-      expect(response.body.data.byStatus.lost).toBe(1);
+      expect(response.body.data.byStatus.not_interested).toBe(1);
       expect(response.body.data.total).toBe(1);
     });
   });
@@ -137,9 +148,9 @@ describe("admin read endpoints", () => {
       await request(app)
         .patch(`/api/v1/enquiries/${id}/status`)
         .set("x-api-key", API_KEY)
-        .send({ status: "lost" });
+        .send({ status: "not_interested" });
 
-      expect((await authed("/api/v1/enquiries?q=aisha&status=lost")).body.data).toHaveLength(1);
+      expect((await authed("/api/v1/enquiries?q=aisha&status=not_interested")).body.data).toHaveLength(1);
       expect((await authed("/api/v1/enquiries?q=aisha&status=new")).body.data).toHaveLength(0);
     });
 

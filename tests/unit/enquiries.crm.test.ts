@@ -65,14 +65,14 @@ describe("CRM endpoints", () => {
       const [id] = await seed();
 
       const response = await as(request(app).patch(`/api/v1/enquiries/${id}`)).send({
-        status: "qualified",
+        status: "interested",
         priority: "urgent",
       });
 
       expect(response.status).toBe(200);
-      expect(response.body.data).toMatchObject({ status: "qualified", priority: "urgent" });
+      expect(response.body.data).toMatchObject({ status: "interested", priority: "urgent" });
       expect(crm.activities.map((a) => [a.type, a.description, a.actor.name])).toEqual([
-        ["status_changed", "Status changed from New to Qualified", "Alex Morgan"],
+        ["status_changed", "Status changed from New to Interested", "Alex Morgan"],
         ["priority_changed", "Priority changed from Medium to Urgent", "Alex Morgan"],
       ]);
     });
@@ -89,13 +89,13 @@ describe("CRM endpoints", () => {
         status: 422,
       });
       await expect(
-        as(request(app).patch(`/api/v1/enquiries/${id}`)).send({ status: "closed" }),
+        as(request(app).patch(`/api/v1/enquiries/${id}`)).send({ status: "archived" }),
       ).resolves.toMatchObject({ status: 422 });
     });
 
     it("404s an unknown enquiry", async () => {
       await expect(
-        as(request(app).patch("/api/v1/enquiries/999")).send({ status: "lost" }),
+        as(request(app).patch("/api/v1/enquiries/999")).send({ status: "not_interested" }),
       ).resolves.toMatchObject({ status: 404 });
     });
   });
@@ -157,6 +157,16 @@ describe("CRM endpoints", () => {
       // 422 from the bulk schema (empty selection), not 404/405 from `/:id`.
       expect(response.status).toBe(422);
       expect(response.body.error.details.fieldErrors).toHaveProperty("ids");
+    });
+
+    it("filters the list by status group and rejects an unknown group", async () => {
+      const [a, b] = await seed(3);
+      await as(request(app).patch(`/api/v1/enquiries/${a}`)).send({ status: "not_eligible" });
+      await as(request(app).patch(`/api/v1/enquiries/${b}`)).send({ status: "duplicate_lead" });
+
+      expect((await as(request(app).get("/api/v1/enquiries?group=lost"))).body.pagination.total).toBe(2);
+      expect((await as(request(app).get("/api/v1/enquiries?group=open"))).body.pagination.total).toBe(1);
+      await expect(as(request(app).get("/api/v1/enquiries?group=dead"))).resolves.toMatchObject({ status: 422 });
     });
 
     it("filters the list by assignee and by the unassigned queue", async () => {
@@ -269,7 +279,7 @@ describe("CRM endpoints", () => {
 
   it("serves activity, stats and facets as fixed routes ahead of /:id", async () => {
     const [id] = await seed();
-    await as(request(app).patch(`/api/v1/enquiries/${id}`)).send({ status: "contacted" });
+    await as(request(app).patch(`/api/v1/enquiries/${id}`)).send({ status: "conversation_ongoing" });
 
     const timeline = await as(request(app).get(`/api/v1/enquiries/${id}/activity`));
     expect(timeline.body.data[0]).toMatchObject({ type: "status_changed" });
@@ -278,7 +288,7 @@ describe("CRM endpoints", () => {
     expect(recent.status).toBe(200);
 
     const stats = await as(request(app).get("/api/v1/enquiries/stats?assignedTo=unassigned"));
-    expect(stats.body.data).toMatchObject({ total: 1, unassigned: 1, byStatus: { contacted: 1 } });
+    expect(stats.body.data).toMatchObject({ total: 1, unassigned: 1, byStatus: { conversation_ongoing: 1 } });
 
     const facets = await as(request(app).get("/api/v1/enquiries/facets"));
     expect(facets.body.data).toEqual({ destinations: ["France"], visaTypes: [expect.any(String)] });
@@ -291,7 +301,7 @@ describe("CRM endpoints", () => {
       .set("x-api-key", API_KEY)
       .set("x-actor-id", "usr_7")
       .set("x-actor-name", encodeURIComponent("Zoë 陈"))
-      .send({ status: "contacted" });
+      .send({ status: "conversation_ongoing" });
     expect(crm.activities[0]!.actor).toEqual({ id: "usr_7", name: "Zoë 陈" });
   });
 
@@ -300,7 +310,7 @@ describe("CRM endpoints", () => {
     await request(app)
       .patch(`/api/v1/enquiries/${id}`)
       .set("x-api-key", API_KEY)
-      .send({ status: "contacted" });
+      .send({ status: "conversation_ongoing" });
     expect(crm.activities[0]!.actor).toEqual({ id: null, name: null });
   });
 

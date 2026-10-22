@@ -160,8 +160,8 @@ describeDb("enquiry CRM (PostgreSQL)", () => {
     const b = await service.create(toCreateEnquiry({ email: "b@example.com", destination: "France" }));
     await service.create(toCreateEnquiry({ email: "c@example.com", destination: "Spain" }));
     await service.bulkAssign([a.id, b.id], SARAH, ALEX);
-    await service.update(a.id, { status: "converted" }, SARAH);
-    await service.update(b.id, { status: "contacted" }, SARAH);
+    await service.update(a.id, { status: "closed" }, SARAH);
+    await service.update(b.id, { status: "conversation_ongoing" }, SARAH);
     await service.addFollowUp(b.id, { title: "Chase", dueAt: new Date(Date.now() + 3_600_000) }, SARAH);
 
     const all = await service.stats();
@@ -171,7 +171,7 @@ describeDb("enquiry CRM (PostgreSQL)", () => {
       unassigned: 1,
       openFollowUps: 1,
       last7Days: 3,
-      byStatus: { new: 1, contacted: 1, converted: 1 },
+      byStatus: { new: 1, conversation_ongoing: 1, closed: 1 },
       byPriority: { medium: 3 },
       byDestination: [
         { destination: "France", total: 2, converted: 1 },
@@ -217,7 +217,7 @@ describeDb("enquiry CRM (PostgreSQL)", () => {
     const { id } = await service.create(toCreateEnquiry());
     await service.addNote(id, "Gone soon", SARAH);
     await service.addFollowUp(id, { title: "Never", dueAt: new Date() }, SARAH);
-    await service.update(id, { status: "lost" }, SARAH);
+    await service.update(id, { status: "not_interested" }, SARAH);
     await query("UPDATE enquiries SET created_at = NOW() - INTERVAL '400 days'");
 
     expect(await service.purge(365)).toBe(1);
@@ -227,9 +227,42 @@ describeDb("enquiry CRM (PostgreSQL)", () => {
     }
   });
 
-  it("keeps converted enquiries through the retention purge", async () => {
+  it("rolls status counts up by group and counts won leads as converted", async () => {
+    const statuses = ["new", "call_scheduled", "travel_date_deferred", "closed", "duplicate_lead", "visa_shopping"] as const;
+    for (const [i, status] of statuses.entries()) {
+      const { id } = await service.create(toCreateEnquiry({ email: `g${i}@example.com` }));
+      if (status !== "new") await service.update(id, { status }, SARAH);
+    }
+
+    const stats = await service.stats();
+    expect(stats.byGroup).toEqual({ open: 2, on_hold: 1, won: 1, lost: 2 });
+    const lost = await list({ group: "lost" });
+    expect(lost.items.map((e) => e.status).sort()).toEqual(["duplicate_lead", "visa_shopping"]);
+    expect(stats.byDestination[0]).toMatchObject({ total: 6, converted: 1 });
+  });
+
+  it("purges every lost-group status but keeps on-hold leads", async () => {
+    for (const [i, status] of (["not_eligible", "duplicate_lead", "travel_date_deferred"] as const).entries()) {
+      const { id } = await service.create(toCreateEnquiry({ email: `p${i}@example.com` }));
+      await service.update(id, { status }, SARAH);
+    }
+    await query("UPDATE enquiries SET created_at = NOW() - INTERVAL '400 days'");
+
+    expect(await service.purge(365)).toBe(2);
+    const { rows } = await query<{ status: string }>("SELECT status FROM enquiries");
+    expect(rows.map((r) => r.status)).toEqual(["travel_date_deferred"]);
+  });
+
+  it("rejects a status outside the list at the database level", async () => {
     const { id } = await service.create(toCreateEnquiry());
-    await service.update(id, { status: "converted" }, SARAH);
+    await expect(query("UPDATE enquiries SET status = 'qualified' WHERE id = $1", [id])).rejects.toThrow(
+      /enquiries_status_check/,
+    );
+  });
+
+  it("keeps closed (won) enquiries through the retention purge", async () => {
+    const { id } = await service.create(toCreateEnquiry());
+    await service.update(id, { status: "closed" }, SARAH);
     await query("UPDATE enquiries SET created_at = NOW() - INTERVAL '400 days'");
 
     expect(await service.purge(365)).toBe(0);

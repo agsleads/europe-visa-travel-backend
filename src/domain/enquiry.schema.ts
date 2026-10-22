@@ -84,9 +84,80 @@ export type CreateEnquiry = z.output<typeof createEnquirySchema>;
 
 /* ------------------------------------------------------------- lead state */
 
-/** The CRM pipeline, in order. `converted` and `lost` are terminal. */
-export const ENQUIRY_STATUSES = ["new", "contacted", "qualified", "proposal", "converted", "lost"] as const;
+/**
+ * The CRM's statuses, in pipeline order (which is also the sort order).
+ * `new` is where every website enquiry starts.
+ */
+export const ENQUIRY_STATUSES = [
+  "new",
+  "no_response",
+  "follow_up_required",
+  "conversation_ongoing",
+  "call_scheduled",
+  "call_rescheduled",
+  "interested",
+  "documents_pending",
+  "awaiting_payment",
+  "pre_closed",
+  "travel_date_deferred",
+  "closed",
+  "visa_shopping",
+  "irrelevant_inquiry",
+  "not_eligible",
+  "not_interested",
+  "duplicate_lead",
+] as const;
 export type EnquiryStatus = (typeof ENQUIRY_STATUSES)[number];
+
+export const STATUS_GROUPS = ["open", "on_hold", "won", "lost"] as const;
+export type StatusGroup = (typeof STATUS_GROUPS)[number];
+
+/**
+ * Which group each status counts toward. Conversion rates count `won`; the
+ * retention purge deletes old `lost` enquiries.
+ */
+export const STATUS_GROUP: Record<EnquiryStatus, StatusGroup> = {
+  new: "open",
+  no_response: "open",
+  follow_up_required: "open",
+  conversation_ongoing: "open",
+  call_scheduled: "open",
+  call_rescheduled: "open",
+  interested: "open",
+  documents_pending: "open",
+  awaiting_payment: "open",
+  pre_closed: "open",
+  travel_date_deferred: "on_hold",
+  closed: "won",
+  visa_shopping: "lost",
+  irrelevant_inquiry: "lost",
+  not_eligible: "lost",
+  not_interested: "lost",
+  duplicate_lead: "lost",
+};
+
+export const statusesIn = (group: StatusGroup): EnquiryStatus[] =>
+  ENQUIRY_STATUSES.filter((status) => STATUS_GROUP[status] === group);
+
+export const STATUS_LABELS: Record<EnquiryStatus, string> = {
+  new: "New",
+  no_response: "No Response",
+  follow_up_required: "Follow-up Required",
+  conversation_ongoing: "Conversation Ongoing",
+  call_scheduled: "Call Scheduled",
+  call_rescheduled: "Call Rescheduled",
+  interested: "Interested",
+  documents_pending: "Documents Pending",
+  awaiting_payment: "Awaiting Payment",
+  pre_closed: "Pre-Closed",
+  travel_date_deferred: "Travel Date Deferred",
+  closed: "Closed",
+  visa_shopping: "Visa Shopping",
+  irrelevant_inquiry: "Irrelevant Inquiry",
+  not_eligible: "Not Eligible",
+  not_interested: "Not Interested",
+  duplicate_lead: "Duplicate Lead",
+};
 
 export const ENQUIRY_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 export type EnquiryPriority = (typeof ENQUIRY_PRIORITIES)[number];
@@ -159,6 +230,8 @@ export type EnquirySortField = (typeof ENQUIRY_SORT_FIELDS)[number];
 
 export const listEnquiriesSchema = z.object({
   status: z.enum(ENQUIRY_STATUSES).optional(),
+  /** Every status in a group, e.g. `group=lost`. Combines with `status` by AND. */
+  group: z.enum(STATUS_GROUPS).optional(),
   priority: z.enum(ENQUIRY_PRIORITIES).optional(),
   /** A CRM user id, or the literal `unassigned` for the unowned queue. */
   assignedTo: optionalFilter(64),
@@ -349,7 +422,9 @@ export interface AssigneeStats {
   total: number;
   /** Past the `new` stage: someone has been in touch. */
   contacted: number;
+  /** In the `won` group. */
   converted: number;
+  /** In the `lost` group. */
   lost: number;
 }
 
@@ -366,6 +441,8 @@ export interface EnquiryStats {
    *  tiles and a missing key would render as a gap rather than as "none". */
   byStatus: Record<EnquiryStatus, number>;
   byPriority: Record<EnquiryPriority, number>;
+  /** The same counts rolled up by status group. */
+  byGroup: Record<StatusGroup, number>;
   assigned: number;
   unassigned: number;
   /** Arrivals in the trailing week — the "is it busy?" number. */
@@ -374,6 +451,7 @@ export interface EnquiryStats {
   previous7Days: number;
   /** Follow-ups still to do on the enquiries in scope. */
   openFollowUps: number;
+  /** `converted` counts the `won` group. */
   byDestination: { destination: string; total: number; converted: number }[];
   byVisaType: { visaType: string; total: number; converted: number }[];
   byAssignee: AssigneeStats[];

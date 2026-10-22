@@ -106,9 +106,9 @@ describe("enquiryService", () => {
 
     it("filters by status", async () => {
       const [first] = repository.rows;
-      await service.updateStatus(first!.id, "lost");
+      await service.updateStatus(first!.id, "not_interested");
 
-      await expect(service.list({ status: "lost", sort: "createdAt", order: "desc", limit: 20, offset: 0 })).resolves.toMatchObject(
+      await expect(service.list({ status: "not_interested", sort: "createdAt", order: "desc", limit: 20, offset: 0 })).resolves.toMatchObject(
         { pagination: { total: 1 } },
       );
     });
@@ -117,13 +117,13 @@ describe("enquiryService", () => {
   describe("updateStatus", () => {
     it("updates a known enquiry", async () => {
       const created = await service.create(toCreateEnquiry());
-      await expect(service.updateStatus(created.id, "contacted")).resolves.toMatchObject({
-        status: "contacted",
+      await expect(service.updateStatus(created.id, "conversation_ongoing")).resolves.toMatchObject({
+        status: "conversation_ongoing",
       });
     });
 
     it("throws NotFound rather than silently succeeding on an unknown id", async () => {
-      await expect(service.updateStatus(999, "lost")).rejects.toBeInstanceOf(NotFoundError);
+      await expect(service.updateStatus(999, "not_interested")).rejects.toBeInstanceOf(NotFoundError);
     });
   });
 
@@ -135,7 +135,7 @@ describe("enquiryService", () => {
       const old = new Date(Date.now() - 400 * 86_400_000);
       for (const row of repository.rows) row.createdAt = old;
       // Only the lost one is eligible; an open enquiry is still needed.
-      await service.updateStatus(drop.id, "lost");
+      await service.updateStatus(drop.id, "not_interested");
 
       expect(await service.purge(365)).toBe(1);
       expect(repository.rows.map((r) => r.id)).toEqual([keep.id]);

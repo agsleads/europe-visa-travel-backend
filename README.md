@@ -46,7 +46,7 @@ All under `/api/v1`, all requiring `x-api-key`.
 | Method | Path                   | Purpose                                    |
 | ------ | ---------------------- | ------------------------------------------ |
 | POST   | `/enquiries`           | Create an enquiry. `201` with the reference. |
-| GET    | `/enquiries`           | List. Filters `?status=&priority=&assignedTo=&destination=&visaType=&q=&from=&to=`, order `?sort=&order=`, page `?limit=&offset=` |
+| GET    | `/enquiries`           | List. Filters `?status=&group=&priority=&assignedTo=&destination=&visaType=&q=&from=&to=`, order `?sort=&order=`, page `?limit=&offset=` |
 | GET    | `/enquiries/stats`     | Pipeline counts, by status/priority/destination/visa type/assignee, monthly volume. `?assignedTo=&from=&to=` |
 | GET    | `/enquiries/facets`    | Distinct destinations and visa types, for filter controls. |
 | GET    | `/enquiries/follow-ups`| Follow-ups across enquiries. `?assignedTo=&open=true&limit=` |
@@ -114,9 +114,20 @@ Types: `lead_assigned · status_changed · follow_up_due · user_added · lead_c
 Every enquiry is worked as a lead by the CRM (`crm-frontend`) and the EVC admin
 console:
 
-- **Status** is the pipeline: `new → contacted → qualified → proposal →
-  converted`, or `lost`. Migration 014 mapped the old inbox statuses across:
-  `in_progress`/`responded` → `contacted`, `closed`/`spam` → `lost`.
+- **Status** is the CRM's list, each in a group used for reporting
+  (`STATUS_GROUP` in `src/domain/enquiry.schema.ts`):
+  - *open* — `new`, `no_response`, `follow_up_required`, `conversation_ongoing`,
+    `call_scheduled`, `call_rescheduled`, `interested`, `documents_pending`,
+    `awaiting_payment`, `pre_closed`
+  - *on hold* — `travel_date_deferred`
+  - *won* — `closed`
+  - *lost* — `visa_shopping`, `irrelevant_inquiry`, `not_eligible`,
+    `not_interested`, `duplicate_lead`
+
+  `/stats` counts the won group as `converted` and adds a `byGroup` rollup.
+  Migration 017 mapped the previous pipeline across: `contacted` →
+  `conversation_ongoing`, `qualified` → `interested`, `proposal` →
+  `awaiting_payment`, `converted` → `closed`, `lost` → `not_interested`.
 - **Priority** is `low · medium · high · urgent`, default `medium`.
 - **Assignee** is stored as an opaque CRM user id *and* display name, because
   the CRM's user directory lives outside this service.
@@ -222,9 +233,9 @@ and nothing binds a port as a side effect of `import`.
   logger; log the enquiry id or reference instead.
 - **The client IP is never stored raw** — only the salted hash the frontend
   already computes for rate limiting, for abuse correlation and nothing else.
-- **Retention** is `enquiryService.purge()`, deleting `lost` rows past
-  `ENQUIRY_RETENTION_DAYS` together with their notes, follow-ups and activity.
-  Converted leads are customers and are kept. It is not scheduled yet — see below.
+- **Retention** is `enquiryService.purge()`, deleting rows in the lost status
+  group past `ENQUIRY_RETENTION_DAYS` together with their notes, follow-ups and
+  activity. Won and on-hold leads are kept. It is not scheduled yet — see below.
 
 ## Before production
 

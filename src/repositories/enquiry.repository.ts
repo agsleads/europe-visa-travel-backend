@@ -4,6 +4,9 @@ import { pool } from "@/db/pool";
 import {
   ENQUIRY_PRIORITIES,
   ENQUIRY_STATUSES,
+  STATUS_GROUP,
+  STATUS_GROUPS,
+  statusesIn,
   type Assignee,
   type CreateEnquiry,
   type Enquiry,
@@ -14,6 +17,7 @@ import {
   type EnquiryStatsQuery,
   type EnquiryStatus,
   type ListEnquiriesQuery,
+  type StatusGroup,
 } from "@/domain/enquiry.schema";
 
 /**
@@ -99,6 +103,13 @@ function toEnquiry(row: EnquiryRow): Enquiry {
 /** Postgres's unique-violation SQLSTATE. */
 export const UNIQUE_VIOLATION = "23505";
 
+/**
+ * SQL lists of the statuses in the won and lost groups. Built from constants,
+ * never from input, so interpolating them is safe.
+ */
+const WON = `(${statusesIn("won").map((st) => `'${st}'`).join(", ")})`;
+const LOST = `(${statusesIn("lost").map((st) => `'${st}'`).join(", ")})`;
+
 /** Rank expressions, so pipeline and priority sort in business order rather than alphabetically. */
 const STATUS_RANK = `CASE status ${ENQUIRY_STATUSES.map((s, i) => `WHEN '${s}' THEN ${i}`).join(" ")} END`;
 const PRIORITY_RANK = `CASE priority ${ENQUIRY_PRIORITIES.map((p, i) => `WHEN '${p}' THEN ${i}`).join(" ")} END`;
@@ -121,7 +132,7 @@ const SORT_EXPRESSIONS: Record<EnquirySortField, string> = {
 };
 
 type FilterInput = Partial<
-  Pick<ListEnquiriesQuery, "status" | "priority" | "assignedTo" | "destination" | "visaType" | "q" | "from" | "to">
+  Pick<ListEnquiriesQuery, "status" | "group" | "priority" | "assignedTo" | "destination" | "visaType" | "q" | "from" | "to">
 >;
 
 /**
@@ -138,6 +149,7 @@ function buildFilters(filters: FilterInput) {
   };
 
   if (filters.status) clauses.push(`status = ${bind(filters.status)}`);
+  if (filters.group) clauses.push(`status = ANY(${bind(statusesIn(filters.group))}::varchar[])`);
   if (filters.priority) clauses.push(`priority = ${bind(filters.priority)}`);
   if (filters.assignedTo === "unassigned") clauses.push("assigned_to_id IS NULL");
   else if (filters.assignedTo) clauses.push(`assigned_to_id = ${bind(filters.assignedTo)}`);
@@ -323,14 +335,14 @@ export const enquiryRepository: EnquiryRepository = {
         run<{ key: string; total: string; converted: string }>(
           undefined,
           `SELECT destination AS key, COUNT(*) AS total,
-                  COUNT(*) FILTER (WHERE status = 'converted') AS converted
+                  COUNT(*) FILTER (WHERE status IN ${WON}) AS converted
              FROM (${scoped}) e GROUP BY destination ORDER BY total DESC, destination LIMIT 20`,
           params,
         ),
         run<{ key: string; total: string; converted: string }>(
           undefined,
           `SELECT visa_type AS key, COUNT(*) AS total,
-                  COUNT(*) FILTER (WHERE status = 'converted') AS converted
+                  COUNT(*) FILTER (WHERE status IN ${WON}) AS converted
              FROM (${scoped}) e GROUP BY visa_type ORDER BY total DESC, visa_type LIMIT 20`,
           params,
         ),
@@ -342,8 +354,8 @@ export const enquiryRepository: EnquiryRepository = {
                   (ARRAY_AGG(assigned_to_name ORDER BY assigned_at DESC NULLS LAST))[1] AS name,
                   COUNT(*) AS total,
                   COUNT(*) FILTER (WHERE status <> 'new') AS contacted,
-                  COUNT(*) FILTER (WHERE status = 'converted') AS converted,
-                  COUNT(*) FILTER (WHERE status = 'lost') AS lost
+                  COUNT(*) FILTER (WHERE status IN ${WON}) AS converted,
+                  COUNT(*) FILTER (WHERE status IN ${LOST}) AS lost
              FROM (${scoped}) e
             WHERE assigned_to_id IS NOT NULL
             GROUP BY assigned_to_id
@@ -356,7 +368,7 @@ export const enquiryRepository: EnquiryRepository = {
         run<{ month: string; total: string; converted: string }>(
           undefined,
           `SELECT to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM') AS month, COUNT(*) AS total,
-                  COUNT(*) FILTER (WHERE status = 'converted') AS converted
+                  COUNT(*) FILTER (WHERE status IN ${WON}) AS converted
              FROM (${scoped}) e GROUP BY 1 ORDER BY 1`,
           params,
         ),
@@ -379,6 +391,9 @@ export const enquiryRepository: EnquiryRepository = {
     >;
     for (const row of byPriority.rows) priorityCounts[row.priority] = Number(row.count);
 
+    const groupCounts = Object.fromEntries(STATUS_GROUPS.map((g) => [g, 0])) as Record<StatusGroup, number>;
+    for (const status of ENQUIRY_STATUSES) groupCounts[STATUS_GROUP[status]] += statusCounts[status];
+
     const s = summary.rows[0]!;
     const total = Number(s.total);
     const assigned = Number(s.assigned);
@@ -387,6 +402,7 @@ export const enquiryRepository: EnquiryRepository = {
       total,
       byStatus: statusCounts,
       byPriority: priorityCounts,
+      byGroup: groupCounts,
       assigned,
       unassigned: total - assigned,
       last7Days: Number(s.last7),
@@ -495,8 +511,8 @@ export const enquiryRepository: EnquiryRepository = {
   /**
    * Retention. UK GDPR Art. 5(1)(e) — personal data may not be kept longer
    * than necessary, and a stated retention period the business does not
-   * enforce is worse than none. Lost leads are the dead ones; converted leads
-   * are customers and are kept. Notes, activity and follow-ups go with the
+   * enforce is worse than none. Leads in the lost group are the dead ones;
+   * won and on-hold leads are kept. Notes, activity and follow-ups go with the
    * enquiry through ON DELETE CASCADE.
    */
   async purgeOlderThan(days) {
@@ -504,7 +520,7 @@ export const enquiryRepository: EnquiryRepository = {
       undefined,
       `DELETE FROM enquiries
         WHERE created_at < NOW() - ($1 || ' days')::interval
-          AND status = 'lost'`,
+          AND status IN ${LOST}`,
       [String(days)],
     );
     return rowCount ?? 0;

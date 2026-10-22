@@ -15,7 +15,7 @@ import type {
   RecentActivityQuery,
   UpdateEnquiry,
 } from "@/domain/enquiry.schema";
-import { SYSTEM_ACTOR } from "@/domain/enquiry.schema";
+import { STATUS_LABELS, SYSTEM_ACTOR } from "@/domain/enquiry.schema";
 import { AppError, NotFoundError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import {
@@ -30,15 +30,6 @@ import {
   type NewActivity,
 } from "@/repositories/enquiryCrm.repository";
 import { generateReference } from "@/services/reference";
-
-const STATUS_LABELS: Record<EnquiryStatus, string> = {
-  new: "New",
-  contacted: "Contacted",
-  qualified: "Qualified",
-  proposal: "Proposal",
-  converted: "Converted",
-  lost: "Lost",
-};
 
 const PRIORITY_LABELS: Record<EnquiryPriority, string> = {
   low: "Low",

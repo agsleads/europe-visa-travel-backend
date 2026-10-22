@@ -91,7 +91,7 @@ describeDb("enquiries (PostgreSQL)", () => {
     // same millisecond would still compare equal — nudge the clock forward.
     await new Promise((resolve) => setTimeout(resolve, 25));
 
-    const updated = await service.updateStatus(created.id, "contacted");
+    const updated = await service.updateStatus(created.id, "conversation_ongoing");
 
     expect(updated.updatedAt.getTime()).toBeGreaterThan(created.updatedAt.getTime());
     expect(updated.createdAt.getTime()).toBe(created.createdAt.getTime());
@@ -114,7 +114,7 @@ describeDb("enquiries (PostgreSQL)", () => {
     const drop = await service.create(toCreateEnquiry({ email: "old@example.com" }));
 
     await query("UPDATE enquiries SET created_at = NOW() - INTERVAL '400 days'");
-    await service.updateStatus(drop.id, "lost");
+    await service.updateStatus(drop.id, "not_interested");
 
     expect(await service.purge(365)).toBe(1);
     await expect(service.getById(keep.id)).resolves.toBeTruthy();
@@ -173,18 +173,29 @@ describeDb("enquiries (PostgreSQL)", () => {
   it("reports counts for every status, including those with no rows", async () => {
     const first = await service.create(toCreateEnquiry());
     await service.create(toCreateEnquiry());
-    await service.updateStatus(first.id, "lost");
+    await service.updateStatus(first.id, "not_interested");
 
     const stats = await enquiryRepository.stats();
 
     expect(stats.total).toBe(2);
     expect(stats.byStatus).toEqual({
       new: 1,
-      contacted: 0,
-      qualified: 0,
-      proposal: 0,
-      converted: 0,
-      lost: 1,
+      no_response: 0,
+      follow_up_required: 0,
+      conversation_ongoing: 0,
+      call_scheduled: 0,
+      call_rescheduled: 0,
+      interested: 0,
+      documents_pending: 0,
+      awaiting_payment: 0,
+      pre_closed: 0,
+      travel_date_deferred: 0,
+      closed: 0,
+      visa_shopping: 0,
+      irrelevant_inquiry: 0,
+      not_eligible: 0,
+      not_interested: 1,
+      duplicate_lead: 0,
     });
     expect(stats.last7Days).toBe(2);
   });

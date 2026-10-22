@@ -181,8 +181,8 @@ describe("read endpoints", () => {
     const id = created.body.data.id;
 
     await expect(
-      auth(request(app).patch(`/api/v1/enquiries/${id}/status`)).send({ status: "contacted" }),
-    ).resolves.toMatchObject({ status: 200, body: { data: { status: "contacted" } } });
+      auth(request(app).patch(`/api/v1/enquiries/${id}/status`)).send({ status: "conversation_ongoing" }),
+    ).resolves.toMatchObject({ status: 200, body: { data: { status: "conversation_ongoing" } } });
 
     await expect(
       auth(request(app).patch(`/api/v1/enquiries/${id}/status`)).send({ status: "archived" }),
