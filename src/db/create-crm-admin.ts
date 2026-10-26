@@ -4,8 +4,8 @@ import { logger } from "@/lib/logger";
 import { createUserService } from "@/services/user.service";
 
 /**
- * Creates a CRM admin. Needed once, to bootstrap: every other user is created
- * by an admin from inside the CRM.
+ * Creates a CRM super admin. Needed once, to bootstrap: super admins create
+ * domain admins from inside the CRM, and admins create their users.
  *
  *   CRM_ADMIN_PASSWORD='…' npx tsx src/db/create-crm-admin.ts <username> <email> "<name>" ["<phone>"]
  *   CRM_ADMIN_PASSWORD='…' node dist/db/create-crm-admin.js <username> <email> "<name>" ["<phone>"]
@@ -20,7 +20,8 @@ async function main() {
     email,
     name,
     phone: phone ?? null,
-    role: "admin",
+    role: "super_admin",
+    domain: null,
     status: "active",
     password: process.env.CRM_ADMIN_PASSWORD ?? "",
   });
@@ -31,13 +32,13 @@ async function main() {
     return;
   }
   const user = await createUserService().create(parsed.data);
-  console.log(`Created admin "${user.username}" <${user.email}> (${user.id}).`);
+  console.log(`Created super admin "${user.username}" <${user.email}> (${user.id}).`);
 }
 
 if (require.main === module) {
   main()
     .catch((error: unknown) => {
-      logger.error({ err: error }, "Could not create the admin");
+      logger.error({ err: error }, "Could not create the super admin");
       console.error((error as Error).message);
       process.exitCode = 1;
     })

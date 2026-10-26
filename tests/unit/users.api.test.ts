@@ -104,22 +104,73 @@ describe("/api/v1/users", () => {
     ).resolves.toMatchObject({ status: 200 });
   });
 
-  describe("the last active admin", () => {
+  describe("the last active super admin", () => {
+    const superAdmin = (overrides: Record<string, unknown> = {}) => create({ role: "super_admin", domain: null, ...overrides });
+
     it("cannot be deleted, deactivated or demoted", async () => {
-      const { id } = (await create({ role: "admin" })).body.data;
+      const { id } = (await superAdmin()).body.data;
 
       await expect(auth(request(app).delete(`/api/v1/users/${id}`))).resolves.toMatchObject({
         status: 409,
-        body: { error: { code: "last_admin" } },
+        body: { error: { code: "last_super_admin" } },
       });
       await expect(auth(request(app).patch(`/api/v1/users/${id}`)).send({ status: "inactive" })).resolves.toMatchObject({ status: 409 });
-      await expect(auth(request(app).patch(`/api/v1/users/${id}`)).send({ role: "user" })).resolves.toMatchObject({ status: 409 });
+      await expect(auth(request(app).patch(`/api/v1/users/${id}`)).send({ role: "admin", domain: "evc" })).resolves.toMatchObject({ status: 409 });
     });
 
-    it("can be removed once another active admin exists", async () => {
-      const { id } = (await create({ role: "admin" })).body.data;
-      await create({ username: "second", email: "second@example.com", role: "admin" });
+    it("can be removed once another active super admin exists", async () => {
+      const { id } = (await superAdmin()).body.data;
+      await superAdmin({ username: "second", email: "second@example.com" });
       await expect(auth(request(app).delete(`/api/v1/users/${id}`))).resolves.toMatchObject({ status: 204 });
+    });
+
+    it("does not protect domain admins, who are not the last line", async () => {
+      const { id } = (await create({ role: "admin" })).body.data;
+      await expect(auth(request(app).delete(`/api/v1/users/${id}`))).resolves.toMatchObject({ status: 204 });
+    });
+  });
+
+  describe("roles and domains", () => {
+    it("requires a domain for admins and users, and none for super admins", async () => {
+      const noDomain = await create({ role: "admin", domain: null });
+      expect(noDomain.status).toBe(422);
+      expect(noDomain.body.error.details.fieldErrors.domain).toBe("Choose the domain this user belongs to.");
+
+      const superWithDomain = await create({ role: "super_admin", domain: "evc", username: "boss", email: "boss@example.com" });
+      expect(superWithDomain.status).toBe(422);
+      expect(superWithDomain.body.error.details.fieldErrors).toHaveProperty("domain");
+
+      await expect(create({ role: "super_admin", domain: null, username: "boss", email: "boss@example.com" })).resolves.toMatchObject({
+        status: 201,
+        body: { data: { role: "super_admin", domain: null } },
+      });
+    });
+
+    it("rejects an unknown domain as a field error", async () => {
+      const response = await create({ domain: "nowhere" });
+      expect(response.status).toBe(422);
+      expect(response.body.error.details.fieldErrors).toEqual({ domain: "That domain doesn't exist." });
+    });
+
+    it("clears the domain when someone is promoted to super admin, and needs one to leave it", async () => {
+      const { id } = (await create({ role: "admin" })).body.data;
+      // A second super admin, so the demotion below isn't blocked by the last-super-admin guard.
+      await create({ role: "super_admin", domain: null, username: "boss", email: "boss@example.com" });
+
+      const promoted = await auth(request(app).patch(`/api/v1/users/${id}`)).send({ role: "super_admin" });
+      expect(promoted.body.data).toMatchObject({ role: "super_admin", domain: null });
+
+      const noDomain = await auth(request(app).patch(`/api/v1/users/${id}`)).send({ role: "admin" });
+      expect(noDomain.status).toBe(422);
+      const demoted = await auth(request(app).patch(`/api/v1/users/${id}`)).send({ role: "admin", domain: "roadcover" });
+      expect(demoted.body.data).toMatchObject({ role: "admin", domain: "roadcover" });
+    });
+
+    it("filters the list by domain", async () => {
+      await create();
+      await create({ username: "rcagent", email: "rc@example.com", domain: "roadcover" });
+      const names = (await auth(request(app).get("/api/v1/users?domain=roadcover"))).body.data.map((u: { username: string }) => u.username);
+      expect(names).toEqual(["rcagent"]);
     });
   });
 
@@ -164,13 +215,28 @@ describe("/api/v1/users", () => {
       expect(login.status).toBe(200);
     });
 
-    it("requires the current password for a self-service change", async () => {
-      const { id } = (await create()).body.data;
+    it("lets only a super admin change their own password, proving the current one", async () => {
+      const { id } = (await create({ role: "super_admin", domain: null })).body.data;
       const change = (currentPassword: string) =>
         auth(request(app).post(`/api/v1/users/${id}/password/change`)).send({ currentPassword, newPassword: "Changed123" });
 
       await expect(change("WrongOne1")).resolves.toMatchObject({ status: 400, body: { error: { code: "invalid_password" } } });
       await expect(change("Secret123")).resolves.toMatchObject({ status: 204 });
+    });
+
+    it("refuses self-service changes for admins and users", async () => {
+      for (const [role, username, message] of [
+        ["admin", "anna", "Admin passwords are managed by a super admin."],
+        ["user", "uma", "Your password is managed by your admin."],
+      ] as const) {
+        const { id } = (await create({ role, username, email: `${username}@example.com` })).body.data;
+        const response = await auth(request(app).post(`/api/v1/users/${id}/password/change`)).send({
+          currentPassword: "Secret123",
+          newPassword: "Changed123",
+        });
+        expect(response.status).toBe(403);
+        expect(response.body.error).toMatchObject({ code: "password_managed", message });
+      }
     });
   });
 

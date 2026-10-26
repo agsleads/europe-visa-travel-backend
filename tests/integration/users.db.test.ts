@@ -41,7 +41,7 @@ describeDb("CRM users (PostgreSQL)", () => {
     await service.create(input());
     await expect(
       query(
-        "INSERT INTO crm_users (id, username, name, email, password_hash) VALUES ('usr_dup', 'dup', 'Dup', 'SARAH.CHEN@EXAMPLE.COM', 'x')",
+        "INSERT INTO crm_users (id, username, name, email, domain, password_hash) VALUES ('usr_dup', 'dup', 'Dup', 'SARAH.CHEN@EXAMPLE.COM', 'evc', 'x')",
       ),
     ).rejects.toThrow(/crm_users_email_unique_idx/);
     await expect(service.create(input({ username: "other", email: "Sarah.Chen@example.com" }))).rejects.toMatchObject({
@@ -67,7 +67,7 @@ describeDb("CRM users (PostgreSQL)", () => {
 
   it("rejects a username that breaks the shape rule at the database level", async () => {
     await expect(
-      query("INSERT INTO crm_users (id, username, name, email, password_hash) VALUES ('usr_x', 'Has Space', 'X', 'x@example.com', 'x')"),
+      query("INSERT INTO crm_users (id, username, name, email, domain, password_hash) VALUES ('usr_x', 'Has Space', 'X', 'x@example.com', 'evc', 'x')"),
     ).rejects.toThrow(/crm_users_username_shape_check/);
   });
 
@@ -80,7 +80,7 @@ describeDb("CRM users (PostgreSQL)", () => {
   });
 
   it("authenticates, changes and resets passwords against stored hashes", async () => {
-    const user = await service.create(input());
+    const user = await service.create(input({ role: "super_admin", domain: null }));
 
     await expect(service.authenticate("sarah.chen@example.com", "Secret123")).resolves.toMatchObject({ id: user.id });
     await expect(service.authenticate("sarah.chen@example.com", "Wrong1234")).rejects.toMatchObject({ status: 401 });
@@ -93,11 +93,31 @@ describeDb("CRM users (PostgreSQL)", () => {
     expect((await service.get(user.id)).lastActiveAt).toBeInstanceOf(Date);
   });
 
-  it("protects the last active admin", async () => {
-    const admin = await service.create(input({ role: "admin" }));
-    await expect(service.remove(admin.id)).rejects.toMatchObject({ code: "last_admin" });
+  it("protects the last active super admin", async () => {
+    const boss = await service.create(input({ role: "super_admin", domain: null }));
+    await expect(service.remove(boss.id)).rejects.toMatchObject({ code: "last_super_admin" });
 
-    await service.create(input({ username: "second", email: "second@example.com", role: "admin" }));
-    await expect(service.update(admin.id, { status: "inactive" })).resolves.toMatchObject({ status: "inactive" });
+    await service.create(input({ username: "second", email: "second@example.com", role: "super_admin", domain: null }));
+    await expect(service.update(boss.id, { status: "inactive" })).resolves.toMatchObject({ status: "inactive" });
+  });
+
+  it("enforces domain rules at the database level and maps an unknown domain to a field error", async () => {
+    await expect(
+      query("INSERT INTO crm_users (id, username, name, email, role, password_hash) VALUES ('usr_x', 'xadmin', 'X', 'x@example.com', 'admin', 'x')"),
+    ).rejects.toThrow(/crm_users_role_domain_check/);
+    await expect(service.create(input({ domain: "nowhere" }))).rejects.toMatchObject({
+      status: 422,
+      details: { fieldErrors: { domain: "That domain doesn't exist." } },
+    });
+
+    const rc = await service.create(input({ username: "rcadmin", email: "rc@example.com", role: "admin", domain: "roadcover" }));
+    expect((await service.list({ domain: "roadcover" })).map((u) => u.id)).toEqual([rc.id]);
+  });
+
+  it("seeds the lead domains", async () => {
+    const { rows } = await query<{ key: string }>("SELECT key FROM crm_domains ORDER BY key");
+    expect(rows.map((r) => r.key)).toEqual([
+      "affordableplan", "autoinsurance", "evc", "finalexpense", "roadcover", "seniorhealth", "socialsecurity",
+    ]);
   });
 });

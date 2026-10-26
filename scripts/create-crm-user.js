@@ -15,6 +15,7 @@
  *     -e CRM_USER_PASSWORD='...' \
  *     -e CRM_USER_NAME='Admin' \
  *     -e CRM_USER_ROLE=admin \
+ *     -e CRM_USER_DOMAIN=evc \
  *     europe-visa-travel-backend node scripts/create-crm-user.js
  *
  * The password comes from the environment, never an argument: arguments show
@@ -61,6 +62,8 @@ async function main() {
     email,
     password,
     role: process.env.CRM_USER_ROLE || "admin",
+    // Required for admin and user, omitted for super_admin. See GET /api/v1/domains.
+    domain: process.env.CRM_USER_DOMAIN || null,
     status: "active",
     jobTitle: process.env.CRM_USER_JOB_TITLE || "",
   };
@@ -86,6 +89,7 @@ async function main() {
     console.log(`  username: ${user.username}`);
     console.log(`  email:    ${user.email}`);
     console.log(`  role:     ${user.role}`);
+    console.log(`  domain:   ${user.domain ?? "(all — super admin)"}`);
     console.log(`  status:   ${user.status}`);
   } catch (error) {
     const message = error && error.message ? error.message : String(error);

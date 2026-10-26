@@ -1,10 +1,13 @@
 import { z } from "zod";
 
 /**
- * The CRM user directory: the admins and consultants who work enquiries.
+ * The CRM user directory.
+ *
+ * Roles, highest first: a super admin spans every domain and has none; an
+ * admin manages one domain's users; a user works that domain's leads.
  */
 
-export const USER_ROLES = ["admin", "user"] as const;
+export const USER_ROLES = ["super_admin", "admin", "user"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
 export const USER_STATUSES = ["active", "inactive"] as const;
@@ -59,6 +62,22 @@ const jobTitle = z
   .refine(noControlChars, "Please remove any line breaks from this field.")
   .transform((v) => (v === "" ? null : v));
 
+/** A domain key such as `evc`; null for a super admin. Existence is checked by the database. */
+const domain = z.union([
+  z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9_]{2,30}$/, "Choose a valid domain."),
+  z.null(),
+]);
+
+/** Super admins have no domain; admins and users must have one. */
+export function domainProblem(role: UserRole, domainKey: string | null): string | null {
+  if (role === "super_admin" && domainKey !== null) return "A super admin covers every domain, so has none.";
+  if (role !== "super_admin" && domainKey === null) return "Choose the domain this user belongs to.";
+  return null;
+}
+
 /** A data URL for an uploaded image, an https URL, or null to remove it. */
 const avatarUrl = z.union([
   z
@@ -77,9 +96,13 @@ export const createUserSchema = z.object({
   email,
   phone: phone.optional().default(null),
   role: z.enum(USER_ROLES).default("user"),
+  domain: domain.optional().default(null),
   status: z.enum(USER_STATUSES).default("active"),
   jobTitle: jobTitle.optional().default(""),
   password: passwordSchema,
+}).superRefine((v, ctx) => {
+  const problem = domainProblem(v.role, v.domain);
+  if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["domain"], message: problem });
 });
 
 export type CreateUser = z.output<typeof createUserSchema>;
@@ -91,6 +114,7 @@ export const updateUserSchema = z
     email,
     phone,
     role: z.enum(USER_ROLES),
+    domain,
     status: z.enum(USER_STATUSES),
     jobTitle,
     avatarUrl,
@@ -109,6 +133,11 @@ export const listUsersSchema = z.object({
     .transform((v) => (v ? v : undefined)),
   role: z.enum(USER_ROLES).optional(),
   status: z.enum(USER_STATUSES).optional(),
+  domain: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9_]{2,30}$/, "Invalid domain.")
+    .optional(),
 });
 
 export type ListUsersQuery = z.output<typeof listUsersSchema>;
@@ -140,6 +169,8 @@ export interface User {
   email: string;
   phone: string | null;
   role: UserRole;
+  /** Null for a super admin. */
+  domain: string | null;
   status: UserStatus;
   jobTitle: string | null;
   avatarUrl: string | null;

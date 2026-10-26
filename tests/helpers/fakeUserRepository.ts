@@ -10,7 +10,12 @@ export function createFakeUserRepository(): UserRepository & { rows: (User & { p
   };
   const byId = (id: string) => rows.find((r) => r.id === id);
   const duplicate = (constraint: string) => Object.assign(new Error("duplicate key value"), { code: "23505", constraint });
-  const clash = (candidate: { username?: string; email?: string }, ignoreId?: string) => {
+  const knownDomains = ["evc", "roadcover", "autoinsurance"];
+  const clash = (candidate: { username?: string; email?: string; domain?: string | null }, ignoreId?: string) => {
+    // Mirrors the foreign key to crm_domains.
+    if (candidate.domain && !knownDomains.includes(candidate.domain)) {
+      throw Object.assign(new Error("foreign key violation"), { code: "23503" });
+    }
     const others = rows.filter((r) => r.id !== ignoreId);
     if (candidate.username && others.some((r) => r.username === candidate.username)) {
       throw duplicate("crm_users_username_unique_idx");
@@ -22,10 +27,10 @@ export function createFakeUserRepository(): UserRepository & { rows: (User & { p
 
   return {
     rows,
-    async list({ q, role, status }) {
+    async list({ q, role, status, domain }) {
       const needle = q?.toLowerCase();
       return rows
-        .filter((r) => (!role || r.role === role) && (!status || r.status === status))
+        .filter((r) => (!role || r.role === role) && (!status || r.status === status) && (!domain || r.domain === domain))
         .filter(
           (r) =>
             !needle ||
@@ -78,8 +83,8 @@ export function createFakeUserRepository(): UserRepository & { rows: (User & { p
       rows.splice(index, 1);
       return true;
     },
-    async countOtherActiveAdmins(excludeId) {
-      return rows.filter((r) => r.id !== excludeId && r.role === "admin" && r.status === "active").length;
+    async countOtherActiveSuperAdmins(excludeId) {
+      return rows.filter((r) => r.id !== excludeId && r.role === "super_admin" && r.status === "active").length;
     },
   };
 }
@@ -91,6 +96,7 @@ export function validUserPayload(overrides: Record<string, unknown> = {}) {
     email: "sarah.chen@example.com",
     phone: "+44 7700 900123",
     role: "user",
+    domain: "evc",
     status: "active",
     jobTitle: "Visa Consultant",
     password: "Secret123",

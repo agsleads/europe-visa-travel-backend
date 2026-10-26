@@ -10,6 +10,8 @@ import { requestId, requestIdOf } from "@/api/middleware/requestId";
 import { enquiriesRouter } from "@/api/routes/enquiries.routes";
 import { usersRouter } from "@/api/routes/users.routes";
 import { notificationsRouter } from "@/api/routes/notifications.routes";
+import { domainsRouter } from "@/api/routes/domains.routes";
+import type { DomainRepository } from "@/repositories/domain.repository";
 import { finalExpenseRouter } from "@/api/routes/finalexpense.routes";
 import { seniorHealthRouter } from "@/api/routes/seniorhealth.routes";
 import { affordablePlanRouter } from "@/api/routes/affordableplan.routes";
@@ -40,6 +42,7 @@ export function createApp(
     enquiryService?: EnquiryService;
     userService?: UserService;
     notificationService?: NotificationService;
+    domainRepository?: DomainRepository;
     leadService?: LeadService;
     finalExpenseService?: FinalExpenseService;
     seniorHealthService?: SeniorHealthService;
@@ -114,6 +117,8 @@ export function createApp(
   app.use("/api/v1/users", usersRouter(deps.userService));
   /* In-app notifications for CRM users. */
   app.use("/api/v1/notifications", notificationsRouter(deps.notificationService));
+  /* The lead businesses CRM users belong to. */
+  app.use("/api/v1/domains", domainsRouter(deps.domainRepository));
   /* Road Cover lead intake and its operator reads. Namespaced by producer
      rather than mounted as a second top-level resource: the payload, the
      credential and the retention rules all belong to that partner, and a flat

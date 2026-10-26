@@ -27,6 +27,7 @@ function present(user: User) {
     email: user.email,
     phone: user.phone,
     role: user.role,
+    domain: user.domain,
     status: user.status,
     jobTitle: user.jobTitle,
     avatarUrl: user.avatarUrl,

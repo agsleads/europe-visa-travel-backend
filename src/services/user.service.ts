@@ -1,10 +1,16 @@
 import { randomBytes } from "node:crypto";
 
-import type { CreateUser, ListUsersQuery, UpdateUser, User } from "@/domain/user.schema";
+import { domainProblem, type CreateUser, type ListUsersQuery, type UpdateUser, type User } from "@/domain/user.schema";
 import { AppError, NotFoundError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { getDummyHash, hashPassword, verifyPassword } from "@/lib/password";
-import { UNIQUE_VIOLATION, USERNAME_INDEX, userRepository, type UserRepository } from "@/repositories/user.repository";
+import {
+  FOREIGN_KEY_VIOLATION,
+  UNIQUE_VIOLATION,
+  USERNAME_INDEX,
+  userRepository,
+  type UserRepository,
+} from "@/repositories/user.repository";
 
 /** `usr_` plus 16 lower-case base32 characters: unguessable and URL-safe. */
 export function generateUserId(): string {
@@ -21,6 +27,7 @@ export function generateUserId(): string {
  */
 function conflictFrom(error: unknown): AppError | null {
   const { code, constraint } = error as { code?: string; constraint?: string };
+  if (code === FOREIGN_KEY_VIOLATION) return fieldError(422, "validation_failed", "domain", "That domain doesn't exist.");
   if (code !== UNIQUE_VIOLATION) return null;
   const [field, message] =
     constraint === USERNAME_INDEX
@@ -29,12 +36,17 @@ function conflictFrom(error: unknown): AppError | null {
   return new AppError(message, { status: 409, code: "conflict", details: { fieldErrors: { [field]: message } } });
 }
 
+function fieldError(status: number, code: string, field: string, message: string) {
+  return new AppError(message, { status, code, details: { fieldErrors: { [field]: message } } });
+}
+
 /**
  * Business rules for CRM users.
  *
- * The one invariant guarded here is that the workspace always keeps at least
- * one active admin: deleting, deactivating or demoting the last one would
- * leave nobody able to manage users, with no way back short of the database.
+ * Invariants guarded here: a super admin has no domain and everyone else has
+ * exactly one; and there is always at least one active super admin — deleting,
+ * deactivating or demoting the last would leave nobody able to manage admins,
+ * with no way back short of the database.
  */
 export function createUserService(repository: UserRepository = userRepository) {
   async function requireUser(id: string): Promise<User> {
@@ -43,10 +55,10 @@ export function createUserService(repository: UserRepository = userRepository) {
     return user;
   }
 
-  async function assertNotLastAdmin(user: User, action: string) {
-    if (user.role !== "admin" || user.status !== "active") return;
-    if ((await repository.countOtherActiveAdmins(user.id)) === 0) {
-      throw new AppError(`You can't ${action} the last active admin.`, { status: 409, code: "last_admin" });
+  async function assertNotLastSuperAdmin(user: User, action: string) {
+    if (user.role !== "super_admin" || user.status !== "active") return;
+    if ((await repository.countOtherActiveSuperAdmins(user.id)) === 0) {
+      throw new AppError(`You can't ${action} the last active super admin.`, { status: 409, code: "last_super_admin" });
     }
   }
 
@@ -68,11 +80,12 @@ export function createUserService(repository: UserRepository = userRepository) {
           email: input.email,
           phone: input.phone,
           role: input.role,
+          domain: input.domain,
           status: input.status,
           jobTitle: input.jobTitle,
           passwordHash: await hashPassword(input.password),
         });
-        logger.info({ userId: user.id, role: user.role }, "CRM user created");
+        logger.info({ userId: user.id, role: user.role, domain: user.domain }, "CRM user created");
         return user;
       } catch (error) {
         throw conflictFrom(error) ?? error;
@@ -81,12 +94,19 @@ export function createUserService(repository: UserRepository = userRepository) {
 
     async update(id: string, patch: UpdateUser): Promise<User> {
       const current = await requireUser(id);
-      const demoted = patch.role === "user" && current.role === "admin";
-      const deactivated = patch.status === "inactive" && current.status === "active";
-      if (demoted || deactivated) await assertNotLastAdmin(current, demoted ? "demote" : "deactivate");
+      const role = patch.role ?? current.role;
+      // Becoming a super admin leaves the domain; anything else keeps or sets one.
+      const domain = role === "super_admin" ? null : patch.domain !== undefined ? patch.domain : current.domain;
+      const problem = domainProblem(role, domain);
+      if (problem) throw fieldError(422, "validation_failed", "domain", problem);
 
+      const demoted = current.role === "super_admin" && role !== "super_admin";
+      const deactivated = patch.status === "inactive" && current.status === "active";
+      if (demoted || deactivated) await assertNotLastSuperAdmin(current, demoted ? "demote" : "deactivate");
+
+      const changes = role !== current.role || domain !== current.domain ? { ...patch, role, domain } : patch;
       try {
-        const updated = await repository.update(id, patch);
+        const updated = await repository.update(id, changes);
         if (!updated) throw new NotFoundError(`No user with id ${id}.`);
         logger.info({ userId: id, fields: Object.keys(patch) }, "CRM user updated");
         return updated;
@@ -96,7 +116,7 @@ export function createUserService(repository: UserRepository = userRepository) {
     },
 
     async remove(id: string): Promise<void> {
-      await assertNotLastAdmin(await requireUser(id), "delete");
+      await assertNotLastSuperAdmin(await requireUser(id), "delete");
       await repository.delete(id);
       logger.info({ userId: id }, "CRM user deleted");
     },
@@ -108,8 +128,21 @@ export function createUserService(repository: UserRepository = userRepository) {
       logger.info({ userId: id }, "CRM user password reset");
     },
 
-    /** Self-service change: the current password must match. */
+    /**
+     * Self-service change: the current password must match. Only super admins
+     * may change their own; an admin's password is set by a super admin, and a
+     * user's by their admin.
+     */
     async changePassword(id: string, currentPassword: string, newPassword: string): Promise<void> {
+      const user = await requireUser(id);
+      if (user.role !== "super_admin") {
+        throw new AppError(
+          user.role === "admin"
+            ? "Admin passwords are managed by a super admin."
+            : "Your password is managed by your admin.",
+          { status: 403, code: "password_managed" },
+        );
+      }
       const stored = await repository.findPasswordHash(id);
       if (stored === null) throw new NotFoundError(`No user with id ${id}.`);
       if (!(await verifyPassword(currentPassword, stored))) {

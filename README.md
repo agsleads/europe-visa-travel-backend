@@ -65,25 +65,40 @@ All under `/api/v1`, all requiring `x-api-key`.
 | GET    | `/health`              | Readiness — checks PostgreSQL, `503` if down. |
 | GET    | `/health/live`         | Liveness — process only, never the database. |
 
-### CRM users
+### CRM users and domains
 
-The CRM's user directory (`crm_users`, migration 015). All under
+The CRM's user directory (`crm_users`, migrations 015 and 018). All under
 `/api/v1/users`, all requiring `x-api-key`. Responses never include the
 password hash.
 
+**Roles**, highest first:
+
+- `super_admin` — spans every domain and has none (`domain: null`). Manages
+  admins and users in every domain.
+- `admin` — belongs to one domain and manages that domain's users.
+- `user` — belongs to one domain and works its leads.
+
+A **domain** is one lead business (`crm_domains`, seeded by migration 018):
+`evc`, `roadcover`, `finalexpense`, `seniorhealth`, `affordableplan`,
+`autoinsurance`, `socialsecurity`. Migration 018 put every existing admin and
+user in `evc`; nobody is made a super admin by migration.
+
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
-| GET    | `/users` | List, newest first. `?q=&role=&status=` |
-| POST   | `/users` | `{ username, name, email, phone?, role, status, jobTitle?, password }` — `409` if the username or email exists. |
+| GET    | `/domains` | The domains, `{ key, name, description }`. |
+| GET    | `/users` | List, newest first. `?q=&role=&status=&domain=` |
+| POST   | `/users` | `{ username, name, email, phone?, role, domain, status, jobTitle?, password }` — `domain` required unless `super_admin`; `409` if the username or email exists. |
 | GET    | `/users/:id` | Fetch one. |
-| PATCH  | `/users/:id` | Any of `username, name, email, phone, role, status, jobTitle, avatarUrl`. |
+| PATCH  | `/users/:id` | Any of `username, name, email, phone, role, domain, status, jobTitle, avatarUrl`. Promoting to `super_admin` clears the domain. |
 | DELETE | `/users/:id` | `204`. |
-| PUT    | `/users/:id/password` | Admin reset: `{ password }`. |
-| POST   | `/users/:id/password/change` | Self-service: `{ currentPassword, newPassword }`. |
+| PUT    | `/users/:id/password` | Reset by someone above them: `{ password }`. |
+| POST   | `/users/:id/password/change` | Self-service `{ currentPassword, newPassword }` — **super admins only**; `403 password_managed` for admins and users. |
 | POST   | `/users/authenticate` | `{ login, password }` — `login` is the username or email → the user; `401` wrong credentials, `403` deactivated. |
 
-Passwords are hashed with scrypt (node:crypto). The last active admin cannot be
-deleted, deactivated or demoted (`409 last_admin`). Create the first admin with:
+Passwords are hashed with scrypt (node:crypto). The last active super admin
+cannot be deleted, deactivated or demoted (`409 last_super_admin`). Which CRM
+user may manage whom (admins only their own domain's users) is enforced by the
+CRM. Create the first super admin with:
 
 ```
 CRM_ADMIN_PASSWORD='…' npx tsx src/db/create-crm-admin.ts <username> <email> "<name>" ["<phone>"]
