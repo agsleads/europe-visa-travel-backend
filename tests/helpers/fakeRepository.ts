@@ -42,11 +42,12 @@ export function createFakeRepository(): EnquiryRepository & { rows: Enquiry[]; f
     if (q.assignedTo && q.assignedTo !== "unassigned" && r.assignedTo?.id !== q.assignedTo) return false;
     if (q.destination && r.destination !== q.destination) return false;
     if (q.visaType && r.visaType !== q.visaType) return false;
+    if (q.source && r.source !== q.source) return false;
     if (q.from && r.createdAt < q.from) return false;
     if (q.to && r.createdAt > q.to) return false;
     if (
       needle &&
-      ![r.reference, r.name, r.email, r.phone ?? "", r.destination, r.visaType, r.message].some((field) =>
+      ![r.reference, r.name, r.email ?? "", r.phone ?? "", r.destination, r.visaType, r.message].some((field) =>
         field.toLowerCase().includes(needle),
       )
     ) {
@@ -90,11 +91,57 @@ export function createFakeRepository(): EnquiryRepository & { rows: Enquiry[]; f
         lastContactAt: null,
         nextFollowUpAt: null,
         source: input.source,
+        externalId: null,
+        leadDetails: null,
         createdAt: now,
         updatedAt: now,
       };
       rows.push(enquiry);
       return enquiry;
+    },
+
+    async createExternal(input) {
+      if (fake.failNext) {
+        const error = fake.failNext;
+        fake.failNext = undefined;
+        throw error;
+      }
+      if (rows.some((r) => r.source === input.source && r.externalId === input.externalId)) return null;
+      if (rows.some((r) => r.reference === input.reference)) {
+        throw Object.assign(new Error("duplicate key value"), { code: "23505" });
+      }
+      const enquiry: Enquiry = {
+        id: nextId++,
+        reference: input.reference,
+        name: input.name,
+        email: input.email,
+        phone: input.phone,
+        destination: input.destination,
+        visaType: input.visaType,
+        travelMonth: input.travelMonth,
+        message: input.message,
+        consent: true,
+        consentedAt: input.receivedAt,
+        status: "new",
+        priority: "medium",
+        assignedTo: null,
+        assignedAt: null,
+        lastContactAt: null,
+        nextFollowUpAt: null,
+        source: input.source,
+        externalId: input.externalId,
+        leadDetails: input.leadDetails,
+        createdAt: input.receivedAt,
+        updatedAt: input.receivedAt,
+      };
+      rows.push(enquiry);
+      return { ...enquiry };
+    },
+
+    async existingExternalIds(source, externalIds) {
+      return new Set(
+        rows.filter((r) => r.source === source && r.externalId && externalIds.includes(r.externalId)).map((r) => r.externalId!),
+      );
     },
 
     async findById(id) {
@@ -151,6 +198,7 @@ export function createFakeRepository(): EnquiryRepository & { rows: Enquiry[]; f
       return {
         destinations: [...new Set(rows.map((r) => r.destination))].sort(),
         visaTypes: [...new Set(rows.map((r) => r.visaType))].sort(),
+        sources: [...new Set(rows.map((r) => r.source))].sort(),
       };
     },
 

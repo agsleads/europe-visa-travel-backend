@@ -291,7 +291,7 @@ describe("CRM endpoints", () => {
     expect(stats.body.data).toMatchObject({ total: 1, unassigned: 1, byStatus: { conversation_ongoing: 1 } });
 
     const facets = await as(request(app).get("/api/v1/enquiries/facets"));
-    expect(facets.body.data).toEqual({ destinations: ["France"], visaTypes: [expect.any(String)] });
+    expect(facets.body.data).toEqual({ destinations: ["France"], visaTypes: [expect.any(String)], sources: ["website"] });
   });
 
   it("decodes a percent-encoded actor name, so non-Latin names survive the header", async () => {

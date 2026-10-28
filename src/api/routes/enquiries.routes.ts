@@ -63,6 +63,7 @@ function present(enquiry: Enquiry) {
     lastContactAt: enquiry.lastContactAt?.toISOString() ?? null,
     nextFollowUpAt: enquiry.nextFollowUpAt?.toISOString() ?? null,
     source: enquiry.source,
+    leadDetails: enquiry.leadDetails,
     createdAt: enquiry.createdAt.toISOString(),
     updatedAt: enquiry.updatedAt.toISOString(),
   };

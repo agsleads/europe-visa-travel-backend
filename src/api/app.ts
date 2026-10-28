@@ -11,6 +11,8 @@ import { enquiriesRouter } from "@/api/routes/enquiries.routes";
 import { usersRouter } from "@/api/routes/users.routes";
 import { notificationsRouter } from "@/api/routes/notifications.routes";
 import { domainsRouter } from "@/api/routes/domains.routes";
+import { META_WEBHOOK_PATH, metaRouter, metaWebhookBody } from "@/api/routes/meta.routes";
+import type { FacebookLeadService } from "@/services/facebookLead.service";
 import type { DomainRepository } from "@/repositories/domain.repository";
 import { finalExpenseRouter } from "@/api/routes/finalexpense.routes";
 import { seniorHealthRouter } from "@/api/routes/seniorhealth.routes";
@@ -43,6 +45,7 @@ export function createApp(
     userService?: UserService;
     notificationService?: NotificationService;
     domainRepository?: DomainRepository;
+    facebookLeadService?: FacebookLeadService;
     leadService?: LeadService;
     finalExpenseService?: FinalExpenseService;
     seniorHealthService?: SeniorHealthService;
@@ -93,6 +96,10 @@ export function createApp(
   /* Body cap. The message field is capped at 2000 characters by the schema,
      but the schema only runs after the body is buffered — the limit here is
      what stops a 100 MB POST being read into memory in the first place. */
+  /* Except the Facebook webhook, whose signature is over the exact bytes Meta
+     sent: it gets them raw, and a body already read is skipped by the JSON
+     parser. Its own limit too, since one delivery can batch many leads. */
+  app.use(META_WEBHOOK_PATH, metaWebhookBody);
   app.use(express.json({ limit: "64kb" }));
 
   if (!isTest) {
@@ -119,6 +126,8 @@ export function createApp(
   app.use("/api/v1/notifications", notificationsRouter(deps.notificationService));
   /* The lead businesses CRM users belong to. */
   app.use("/api/v1/domains", domainsRouter(deps.domainRepository));
+  /* Facebook Lead Ads: the leadgen webhook, and the CRM's page and import controls. */
+  app.use("/api/v1/meta", metaRouter(deps.facebookLeadService));
   /* Road Cover lead intake and its operator reads. Namespaced by producer
      rather than mounted as a second top-level resource: the payload, the
      credential and the retention rules all belong to that partner, and a flat

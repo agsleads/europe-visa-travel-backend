@@ -170,6 +170,59 @@ const envSchema = z
     EVC_ONYX_SOURCE_ID: z.coerce.number().int().positive().default(1046),
     EVC_ONYX_TIMEOUT_MS: z.coerce.number().int().positive().max(60_000).default(10_000),
 
+    /**
+     * Facebook Lead Ads.
+     *
+     * META_APP_SECRET signs every webhook delivery (`x-hub-signature-256`) and
+     * is the key for `appsecret_proof` on Graph calls. META_WEBHOOK_VERIFY_TOKEN
+     * is our own random value, typed into the Meta dashboard once so Meta can
+     * prove the callback URL is ours. Same blank-means-absent handling as the
+     * other secrets: outside production an unset app secret leaves the webhook
+     * unsigned with a warning; in production it fails closed.
+     */
+    META_APP_ID: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.string().regex(/^\d{5,32}$/, "META_APP_ID must be the numeric app id.").optional(),
+    ),
+    META_APP_SECRET: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.string().min(16, "META_APP_SECRET must be at least 16 characters.").optional(),
+    ),
+    META_WEBHOOK_VERIFY_TOKEN: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.string().min(16, "META_WEBHOOK_VERIFY_TOKEN must be at least 16 characters.").optional(),
+    ),
+    /**
+     * The pages whose leads we receive, as `pageId:pageAccessToken` pairs,
+     * comma-separated. A page token (not a user token) is what `leads_retrieval`
+     * is granted on; a long-lived one from a system user does not expire.
+     */
+    META_PAGE_ACCESS_TOKENS: z
+      .string()
+      .default("")
+      .transform((value, ctx) => {
+        const pages = new Map<string, string>();
+        for (const pair of csv(value)) {
+          const at = pair.indexOf(":");
+          const pageId = pair.slice(0, at).trim();
+          const token = pair.slice(at + 1).trim();
+          if (at < 1 || !/^\d{1,32}$/.test(pageId) || token.length < 20) {
+            // Never echo the pair: it contains a token.
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Each entry must be pageId:pageAccessToken." });
+            return z.NEVER;
+          }
+          pages.set(pageId, token);
+        }
+        return pages;
+      }),
+    META_GRAPH_API_VERSION: z
+      .string()
+      .regex(/^v\d{1,3}\.\d$/, "META_GRAPH_API_VERSION looks like v23.0.")
+      .default("v23.0"),
+    META_GRAPH_TIMEOUT_MS: z.coerce.number().int().positive().max(30_000).default(8_000),
+    /** Only ever changed to point a test run at a local Graph stand-in. */
+    META_GRAPH_API_URL: z.string().url().default("https://graph.facebook.com"),
+
     /** Comma-separated origins allowed to call the API from a browser. */
     CORS_ORIGINS: z.string().default("").transform(csv),
 

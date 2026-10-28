@@ -153,6 +153,30 @@ console:
   by the calling server. It is recorded, never used to grant access: which rep
   may see which lead is the calling console's responsibility.
 
+### Facebook Lead Ads
+
+Leads from Facebook and Instagram Instant Forms are stored in `enquiries` with
+`source = 'facebook'`, so the CRM works them like any website enquiry. Meta's
+lead id is kept in `external_id`, unique per source, so a lead delivered twice
+(a webhook retry, or an import overlapping the webhook) is stored once. Every
+form answer, plus the page, form, ad and campaign ids, is in `lead_details`.
+
+| Method | Path | Auth | |
+|---|---|---|---|
+| GET | `/api/v1/meta/webhook` | `META_WEBHOOK_VERIFY_TOKEN` | Meta's callback verification; echoes `hub.challenge` |
+| POST | `/api/v1/meta/webhook` | `x-hub-signature-256` (HMAC of the raw body with `META_APP_SECRET`) | `leadgen` deliveries. 200 when every lead is stored; 500 if any failed, so Meta redelivers |
+| GET | `/api/v1/meta/status` | API key | Configuration flags (never secrets), each page's subscription, import progress |
+| POST | `/api/v1/meta/pages/:pageId/subscribe` | API key | Subscribes the app to a page's `leadgen` field |
+| POST | `/api/v1/meta/import` | API key | `{ pageId?, formId?, since? }`. Imports existing leads in the background (202) |
+| GET | `/api/v1/meta/import` | API key | Progress of the last import |
+
+The webhook only carries a lead id; the lead is fetched from the Graph API
+with that page's token from `META_PAGE_ACCESS_TOKENS`. Standard questions map
+by key (`full_name`, `email`, `phone_number`); custom questions mentioning a
+destination, visa or travel date fill those columns, and every other answer is
+listed in the message. Fields a form did not ask for read "Not specified".
+Logs carry ids only, never lead data or tokens.
+
 ### Final Expense Coverage leads
 
 Leads from finalexpensecoverage.us: its home-page quote form and its contact

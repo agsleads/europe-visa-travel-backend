@@ -16,6 +16,7 @@ import {
   type EnquiryStats,
   type EnquiryStatsQuery,
   type EnquiryStatus,
+  type ExternalEnquiry,
   type ListEnquiriesQuery,
   type StatusGroup,
 } from "@/domain/enquiry.schema";
@@ -38,7 +39,7 @@ interface EnquiryRow {
   id: string; // BIGSERIAL arrives as a string; pg will not silently lose precision.
   reference: string;
   name: string;
-  email: string;
+  email: string | null;
   phone: string | null;
   destination: string;
   visa_type: string;
@@ -54,6 +55,8 @@ interface EnquiryRow {
   last_contact_at: Date | null;
   next_follow_up_at: Date | null;
   source: string;
+  external_id: string | null;
+  lead_details: Record<string, unknown> | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -61,7 +64,8 @@ interface EnquiryRow {
 const BASE_COLUMNS = `
   id, reference, name, email, phone, destination, visa_type, travel_month,
   message, consent, consented_at, status, priority, assigned_to_id,
-  assigned_to_name, assigned_at, last_contact_at, source, created_at, updated_at
+  assigned_to_name, assigned_at, last_contact_at, source, external_id,
+  lead_details, created_at, updated_at
 `;
 
 /** Derived, never stored: a stored copy would drift every time a follow-up changed. */
@@ -95,6 +99,8 @@ function toEnquiry(row: EnquiryRow): Enquiry {
     lastContactAt: row.last_contact_at,
     nextFollowUpAt: row.next_follow_up_at,
     source: row.source,
+    externalId: row.external_id,
+    leadDetails: row.lead_details,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -132,7 +138,10 @@ const SORT_EXPRESSIONS: Record<EnquirySortField, string> = {
 };
 
 type FilterInput = Partial<
-  Pick<ListEnquiriesQuery, "status" | "group" | "priority" | "assignedTo" | "destination" | "visaType" | "q" | "from" | "to">
+  Pick<
+    ListEnquiriesQuery,
+    "status" | "group" | "priority" | "assignedTo" | "destination" | "visaType" | "source" | "q" | "from" | "to"
+  >
 >;
 
 /**
@@ -155,6 +164,7 @@ function buildFilters(filters: FilterInput) {
   else if (filters.assignedTo) clauses.push(`assigned_to_id = ${bind(filters.assignedTo)}`);
   if (filters.destination) clauses.push(`destination = ${bind(filters.destination)}`);
   if (filters.visaType) clauses.push(`visa_type = ${bind(filters.visaType)}`);
+  if (filters.source) clauses.push(`source = ${bind(filters.source)}`);
   if (filters.from) clauses.push(`created_at >= ${bind(filters.from)}`);
   if (filters.to) {
     const to = new Date(filters.to);
@@ -177,7 +187,7 @@ function buildFilters(filters: FilterInput) {
     clauses.push(`(
          POSITION(${term} IN LOWER(reference))   > 0
       OR POSITION(${term} IN LOWER(name))        > 0
-      OR POSITION(${term} IN LOWER(email))       > 0
+      OR POSITION(${term} IN LOWER(COALESCE(email, ''))) > 0
       OR POSITION(${term} IN LOWER(COALESCE(phone, ''))) > 0
       OR POSITION(${term} IN LOWER(destination)) > 0
       OR POSITION(${term} IN LOWER(visa_type))   > 0
@@ -196,6 +206,14 @@ export interface AssignmentChange {
 
 export interface EnquiryRepository {
   create(input: CreateEnquiry & { reference: string }, db?: Db): Promise<Enquiry>;
+  /**
+   * Stores a lead from another system (e.g. Facebook Lead Ads), dated when it
+   * was submitted there. Null when that source's id is already stored: a
+   * redelivered or re-imported lead is not an error, just nothing to do.
+   */
+  createExternal(input: ExternalEnquiry & { reference: string }, db?: Db): Promise<Enquiry | null>;
+  /** Which of `externalIds` are already stored for `source`. */
+  existingExternalIds(source: string, externalIds: string[]): Promise<Set<string>>;
   findById(id: number, db?: Db): Promise<Enquiry | null>;
   findByReference(reference: string): Promise<Enquiry | null>;
   list(params: ListEnquiriesQuery): Promise<{ items: Enquiry[]; total: number }>;
@@ -252,6 +270,54 @@ export const enquiryRepository: EnquiryRepository = {
     const row = rows[0];
     if (!row) throw new Error("INSERT ... RETURNING produced no row.");
     return toEnquiry(row);
+  },
+
+  async createExternal(input, db) {
+    /* ON CONFLICT names the external-id index only, so a reference collision
+       still raises 23505 and is retried by the service, while a duplicate
+       lead quietly inserts nothing -- and with no row, no activity either. */
+    const { rows } = await run<EnquiryRow>(
+      db,
+      `WITH inserted AS (
+         INSERT INTO enquiries
+           (reference, name, email, phone, destination, visa_type, travel_month,
+            message, consent, consented_at, source, external_id, lead_details, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9, $10, $11, $12, $9)
+         ON CONFLICT (source, external_id) WHERE external_id IS NOT NULL DO NOTHING
+         RETURNING ${BASE_COLUMNS}
+       ), activity AS (
+         INSERT INTO enquiry_activities (enquiry_id, type, description, created_at)
+         SELECT id, 'created', $13, created_at FROM inserted
+       )
+       SELECT *, NULL::timestamptz AS next_follow_up_at FROM inserted`,
+      [
+        input.reference,
+        input.name,
+        input.email,
+        input.phone,
+        input.destination,
+        input.visaType,
+        input.travelMonth,
+        input.message,
+        input.receivedAt,
+        input.source,
+        input.externalId,
+        input.leadDetails === null ? null : JSON.stringify(input.leadDetails),
+        input.activityDescription.slice(0, 500),
+      ],
+    );
+    const row = rows[0];
+    return row ? toEnquiry(row) : null;
+  },
+
+  async existingExternalIds(source, externalIds) {
+    if (externalIds.length === 0) return new Set();
+    const { rows } = await run<{ external_id: string }>(
+      undefined,
+      "SELECT external_id FROM enquiries WHERE source = $1 AND external_id = ANY($2::varchar[])",
+      [source, externalIds],
+    );
+    return new Set(rows.map((r) => r.external_id));
   },
 
   async findById(id, db) {
@@ -434,13 +500,15 @@ export const enquiryRepository: EnquiryRepository = {
   },
 
   async facets() {
-    const [destinations, visaTypes] = await Promise.all([
+    const [destinations, visaTypes, sources] = await Promise.all([
       run<{ value: string }>(undefined, "SELECT DISTINCT destination AS value FROM enquiries ORDER BY 1"),
       run<{ value: string }>(undefined, "SELECT DISTINCT visa_type AS value FROM enquiries ORDER BY 1"),
+      run<{ value: string }>(undefined, "SELECT DISTINCT source AS value FROM enquiries ORDER BY 1"),
     ]);
     return {
       destinations: destinations.rows.map((r) => r.value),
       visaTypes: visaTypes.rows.map((r) => r.value),
+      sources: sources.rows.map((r) => r.value),
     };
   },
 

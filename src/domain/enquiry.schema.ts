@@ -237,6 +237,8 @@ export const listEnquiriesSchema = z.object({
   assignedTo: optionalFilter(64),
   destination: optionalFilter(100),
   visaType: optionalFilter(100),
+  /** Where the enquiry came from: `website`, `crm`, `facebook`. */
+  source: optionalFilter(50),
 
   /**
    * Free-text search across reference, name, email, phone, destination, visa
@@ -365,7 +367,8 @@ export interface Enquiry {
   id: number;
   reference: string;
   name: string;
-  email: string;
+  /** Null only for leads from a form that did not ask for one (Facebook Lead Ads). */
+  email: string | null;
   phone: string | null;
   destination: string;
   visaType: string;
@@ -381,8 +384,30 @@ export interface Enquiry {
   /** The earliest open follow-up, derived — never stored. */
   nextFollowUpAt: Date | null;
   source: string;
+  /** The producer's id for the lead, e.g. Meta's leadgen id. Null for website and CRM enquiries. */
+  externalId: string | null;
+  /** Producer-specific detail: for Facebook, a `FacebookLeadDetails`. */
+  leadDetails: Record<string, unknown> | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** A lead from another system, already mapped onto enquiry fields. */
+export interface ExternalEnquiry {
+  name: string;
+  email: string | null;
+  phone: string | null;
+  destination: string;
+  visaType: string;
+  travelMonth: string;
+  message: string;
+  source: string;
+  externalId: string;
+  leadDetails: Record<string, unknown> | null;
+  /** When it was submitted there; becomes `created_at`. */
+  receivedAt: Date;
+  /** The first line of its timeline. */
+  activityDescription: string;
 }
 
 export interface EnquiryActivity {
@@ -463,4 +488,5 @@ export interface EnquiryStats {
 export interface EnquiryFacets {
   destinations: string[];
   visaTypes: string[];
+  sources: string[];
 }
