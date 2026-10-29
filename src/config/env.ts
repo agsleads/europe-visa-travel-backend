@@ -171,6 +171,24 @@ const envSchema = z
     EVC_ONYX_TIMEOUT_MS: z.coerce.number().int().positive().max(60_000).default(10_000),
 
     /**
+     * Blacklist Alliance single-number lookup. The key is sent in the `key`
+     * query parameter (the provider's only auth scheme), so the request URL
+     * is never logged. Blank means absent: the endpoint then answers 503
+     * instead of calling the provider with no credential. VERSION is the
+     * `ver` parameter; unset leaves the provider's default.
+     */
+    BLACKLIST_ALLIANCE_API_KEY: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.string().optional(),
+    ),
+    BLACKLIST_ALLIANCE_API_URL: z.string().url().default("https://api.blacklistalliance.net"),
+    BLACKLIST_ALLIANCE_VERSION: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.enum(["v1", "v2", "v3", "v5"]).optional(),
+    ),
+    BLACKLIST_ALLIANCE_TIMEOUT_MS: z.coerce.number().int().positive().max(60_000).default(10_000),
+
+    /**
      * Facebook Lead Ads.
      *
      * META_APP_SECRET signs every webhook delivery (`x-hub-signature-256`) and
@@ -235,6 +253,14 @@ const envSchema = z
      * surface does not also throttle the authenticated operator reads.
      */
     ONYX_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(10_000).default(10),
+
+    /**
+     * Ceiling for the PUBLIC Blacklist lookup route, per IP per minute. Its
+     * own knob for the reason ONYX_RATE_LIMIT_MAX is: the route carries no API
+     * key, so this is the whole of its protection, and each call is a paid
+     * lookup.
+     */
+    BLACKLIST_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(10_000).default(30),
 
     RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(10 * 60 * 1000),
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),

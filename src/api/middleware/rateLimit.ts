@@ -205,3 +205,24 @@ export const onyxUtilizationLimiter = rateLimit({
     },
   },
 });
+
+/**
+ * Blacklist Alliance lookup, called from the static lookup page.
+ *
+ * Unauthenticated like the Onyx routes, so this limiter is the whole of its
+ * protection, and every call spends a paid lookup. Its own instance so traffic
+ * here cannot throttle the Onyx tools, and vice versa. Same in-process KNOWN
+ * LIMIT as the others: move to `rate-limit-redis` before scaling out.
+ */
+export const blacklistLookupLimiter = rateLimit({
+  windowMs: 60_000,
+  max: env.BLACKLIST_RATE_LIMIT_MAX,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    error: {
+      code: "rate_limited",
+      message: "Too many lookups. Please wait a moment and try again.",
+    },
+  },
+});

@@ -21,6 +21,7 @@ import { autoInsuranceRouter } from "@/api/routes/autoinsurance.routes";
 import { socialSecurityRouter } from "@/api/routes/socialsecurity.routes";
 import { leadsRouter } from "@/api/routes/leads.routes";
 import { onyxRouter } from "@/api/routes/onyx.routes";
+import { blacklistRouter } from "@/api/routes/blacklist.routes";
 import { healthRouter } from "@/api/routes/health.routes";
 import { logger } from "@/lib/logger";
 import type { EnquiryService } from "@/services/enquiry.service";
@@ -33,6 +34,7 @@ import type { AffordablePlanService } from "@/services/affordableplan.service";
 import type { AutoInsuranceService } from "@/services/autoinsurance.service";
 import type { SocialSecurityService } from "@/services/socialsecurity.service";
 import type { OnyxClient } from "@/services/onyx.client";
+import type { BlacklistClient } from "@/services/blacklist.client";
 
 /**
  * The app is built by a factory, not created at import time. Tests construct
@@ -53,6 +55,7 @@ export function createApp(
     autoInsuranceService?: AutoInsuranceService;
     socialSecurityService?: SocialSecurityService;
     onyxClient?: OnyxClient;
+    blacklistClient?: BlacklistClient;
   } = {},
 ): Express {
   const app = express();
@@ -145,6 +148,8 @@ export function createApp(
      requests, namespaced by producer like the others. */
   app.use("/api/v1/socialsecurity/leads", socialSecurityRouter(deps.socialSecurityService));
   app.use("/api/v1/onyx", onyxRouter(deps.onyxClient));
+  /* Blacklist Alliance single-number lookup; stores nothing. */
+  app.use("/api/v1/blacklist", blacklistRouter(deps.blacklistClient));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

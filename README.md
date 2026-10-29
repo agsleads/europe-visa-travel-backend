@@ -197,6 +197,27 @@ idempotency key: the site keeps it across a retry, so a submit that reached us
 but lost its response is recorded once. Tables are in migration `003`; the
 consent table is append-only and `ON DELETE RESTRICT`, like Road Cover's.
 
+### Blacklist Alliance lookup
+
+Checks one phone number against the Blacklist Alliance databases (litigators,
+federal and state DNC). Stores nothing. **Public, no API key**: the caller is the
+static `blacklist-lookup` page, so it relies on `BLACKLIST_RATE_LIMIT_MAX`
+(per IP, per minute) and `CORS_ORIGINS` instead. Every call is a paid lookup.
+
+| Method | Path                  | Auth | Purpose |
+| ------ | --------------------- | ---- | ------- |
+| POST   | `/blacklist/lookup`   | none | `{ phone }` → `200 { data: <provider response> }`. |
+
+`phone` is a 10-digit US number; punctuation and a leading `+1`/`1` are
+stripped. Upstream this is `GET https://api.blacklistalliance.net/lookup?key=…&phone=…&resp=json`.
+The key goes in the query string, so that URL is never logged. The response's
+`message` is the verdict (`Good`, `Blacklisted`, `Suppressed`, `FederalDNC`,
+`StateDNC`) and `code` lists the matching databases. A provider 422 (invalid
+number) comes back as a `phone` field error. Any other refusal is a `502
+blacklist_rejected` with `upstreamStatus` and `upstreamMessage`. A 403 there
+means our key is wrong. An unset `BLACKLIST_ALLIANCE_API_KEY` answers `503`.
+Test numbers: `2223334444` (good), `9999999999` (blacklisted).
+
 `?q=` searches reference, name, email, destination and message. It uses
 `POSITION`, not `LIKE`, so `%` and `_` in a search term are literal characters
 rather than wildcards — otherwise searching for "50%" would match every row.

@@ -30,3 +30,4 @@ process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgresql://localh
    a file. Raised here so the suite exercises the routes rather than the
    limiter; the production default lives in src/config/env.ts. */
 process.env.ONYX_RATE_LIMIT_MAX ??= "10000";
+process.env.BLACKLIST_RATE_LIMIT_MAX ??= "10000";
