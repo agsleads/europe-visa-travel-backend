@@ -200,13 +200,18 @@ consent table is append-only and `ON DELETE RESTRICT`, like Road Cover's.
 ### Blacklist Alliance lookup
 
 Checks one phone number against the Blacklist Alliance databases (litigators,
-federal and state DNC). Stores nothing. **Public, no API key**: the caller is the
-static `blacklist-lookup` page, so it relies on `BLACKLIST_RATE_LIMIT_MAX`
-(per IP, per minute) and `CORS_ORIGINS` instead. Every call is a paid lookup.
+federal and state DNC). Stores nothing. **No API key, IP-restricted**: the caller
+is the static `blacklist-lookup` page, so the route answers only the addresses
+in `BLACKLIST_ALLOWED_IPS` (comma-separated IPs or CIDR ranges, IPv4 or IPv6;
+empty = open to all) and gives everyone else `403 ip_not_allowed` with their own
+address in the message. `BLACKLIST_RATE_LIMIT_MAX` (per IP, per minute) and
+`CORS_ORIGINS` apply after that. Every call is a paid lookup. The client IP is
+the one Caddy forwards; `api.agsleads.com` has no AAAA record, so callers
+reach it over IPv4 and an IPv6 entry there never matches.
 
 | Method | Path                  | Auth | Purpose |
 | ------ | --------------------- | ---- | ------- |
-| POST   | `/blacklist/lookup`   | none | `{ phone }` → `200 { data: <provider response> }`. |
+| POST   | `/blacklist/lookup`   | allowed IPs | `{ phone }` → `200 { data: <provider response> }`. |
 
 `phone` is a 10-digit US number; punctuation and a leading `+1`/`1` are
 stripped. Upstream this is `GET https://api.blacklistalliance.net/lookup?key=…&phone=…&resp=json`.

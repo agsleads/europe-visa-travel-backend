@@ -1,9 +1,11 @@
 import { Router } from "express";
 
 import { asyncHandler } from "@/api/middleware/asyncHandler";
+import { ipAllowlist } from "@/api/middleware/ipAllowlist";
 import { requestIdOf } from "@/api/middleware/requestId";
 import { blacklistLookupLimiter } from "@/api/middleware/rateLimit";
 import { validate } from "@/api/middleware/validate";
+import { env } from "@/config/env";
 import { blacklistLookupSchema, type BlacklistLookupPayload } from "@/domain/blacklist.schema";
 import { logger } from "@/lib/logger";
 import { createBlacklistClient, type BlacklistClient } from "@/services/blacklist.client";
@@ -11,7 +13,7 @@ import { createBlacklistClient, type BlacklistClient } from "@/services/blacklis
 /*
  * POST /api/v1/blacklist/lookup
  *   Checks one phone number against the Blacklist Alliance databases.
- *   Stores nothing. PUBLIC - no API key.
+ *   Stores nothing. No API key; IP-restricted by BLACKLIST_ALLOWED_IPS.
  *
  *   Body  { phone: "2223334444" }   (punctuation and a leading +1 are fine)
  *   200   { data: <Blacklist Alliance's response> }
@@ -21,12 +23,14 @@ import { createBlacklistClient, type BlacklistClient } from "@/services/blacklis
  * POST, not GET, although the upstream call is a GET: a phone number in our
  * query string would land in the access log of every hop in front of us.
  *
- * Public for the reason the Onyx routes are: the caller is a static page with
- * no server of its own, and a key shipped in that page is readable by anyone.
- * `blacklistLookupLimiter` and the CORS allowlist are its protection instead.
- * Each call spends a paid lookup, so watch usage after launch.
+ * No API key, for the reason the Onyx routes have none: the caller is a static
+ * page with no server of its own, and a key shipped in that page is readable
+ * by anyone. Instead it answers only the addresses in BLACKLIST_ALLOWED_IPS
+ * (403 `ip_not_allowed` to the rest), then `blacklistLookupLimiter` and the
+ * CORS allowlist. Each call spends a paid lookup.
  *
  * Failure cases:
+ *   403  The caller's IP is not in BLACKLIST_ALLOWED_IPS.
  *   422  The number failed validation here, or Blacklist Alliance rejected it
  *        as invalid. Body: the usual { error: { details: { fieldErrors } } }.
  *   502  Blacklist Alliance refused the request (a 403 there means OUR key is
@@ -36,11 +40,16 @@ import { createBlacklistClient, type BlacklistClient } from "@/services/blacklis
  *   504  Blacklist Alliance did not answer in time.
  */
 
-export function blacklistRouter(client: BlacklistClient = createBlacklistClient()): Router {
+export function blacklistRouter(
+  client: BlacklistClient = createBlacklistClient(),
+  allowedIps: readonly string[] = env.BLACKLIST_ALLOWED_IPS,
+): Router {
   const router = Router();
 
   router.post(
     "/lookup",
+    // Before the limiter: a refused address should not spend anyone's quota.
+    ipAllowlist(allowedIps),
     blacklistLookupLimiter,
     validate(blacklistLookupSchema),
     asyncHandler(async (req, res) => {

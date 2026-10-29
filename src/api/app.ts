@@ -58,6 +58,7 @@ export function createApp(
     socialSecurityService?: SocialSecurityService;
     onyxClient?: OnyxClient;
     blacklistClient?: BlacklistClient;
+    blacklistAllowedIps?: readonly string[];
     callGridClient?: CallGridClient;
   } = {},
 ): Express {
@@ -152,7 +153,7 @@ export function createApp(
   app.use("/api/v1/socialsecurity/leads", socialSecurityRouter(deps.socialSecurityService));
   app.use("/api/v1/onyx", onyxRouter(deps.onyxClient));
   /* Blacklist Alliance single-number lookup; stores nothing. */
-  app.use("/api/v1/blacklist", blacklistRouter(deps.blacklistClient));
+  app.use("/api/v1/blacklist", blacklistRouter(deps.blacklistClient, deps.blacklistAllowedIps));
   /* CallGrid real-time bids and their confirmations; stores nothing. */
   app.use("/api/v1/callgrid", callGridRouter(deps.callGridClient));
 

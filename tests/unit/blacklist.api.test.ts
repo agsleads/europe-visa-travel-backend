@@ -194,3 +194,58 @@ describe("POST /api/v1/blacklist/lookup", () => {
     expect(response.status).toBe(200);
   });
 });
+
+describe("POST /api/v1/blacklist/lookup IP allowlist", () => {
+  const ALLOWED = ["58.65.176.229", "2407:d000:1c:2553:37c4:1ded:c316:2ab", "10.0.0.0/8"];
+
+  /** `x-forwarded-for` stands in for Caddy: the app trusts one proxy hop. */
+  function from(ip: string) {
+    let called = false;
+    const blacklistClient = createBlacklistClient(CONFIG, (async () => {
+      called = true;
+      return json(GOOD);
+    }) as unknown as typeof fetch);
+    const app = createApp({ blacklistClient, blacklistAllowedIps: ALLOWED });
+    return {
+      send: () => request(app).post(PATH).set("x-forwarded-for", ip).send({ phone: "2223334444" }),
+      called: () => called,
+    };
+  }
+
+  it.each([
+    ["58.65.176.229"],
+    ["2407:d000:1c:2553:37c4:1ded:c316:2ab"],
+    ["2407:D000:1C:2553:37C4:1DED:C316:02AB"],
+    ["::ffff:58.65.176.229"],
+    ["10.20.30.40"],
+  ])("lets %s through", async (ip) => {
+    const caller = from(ip);
+
+    const response = await caller.send();
+
+    expect(response.status).toBe(200);
+    expect(caller.called()).toBe(true);
+  });
+
+  it.each([["39.49.169.249"], ["58.65.176.230"], ["2407:d000:1c:2553::1"]])(
+    "refuses %s with 403 without calling the provider",
+    async (ip) => {
+      const caller = from(ip);
+
+      const response = await caller.send();
+
+      expect(response.status).toBe(403);
+      expect(response.body.error.code).toBe("ip_not_allowed");
+      expect(response.body.error.message).toContain(ip);
+      expect(caller.called()).toBe(false);
+    },
+  );
+
+  it("rejects a malformed entry when the list is built", async () => {
+    const { buildAllowlist } = await import("@/lib/ipList");
+
+    expect(() => buildAllowlist(["58.65.176.300"])).toThrow(/58\.65\.176\.300/);
+    expect(() => buildAllowlist(["10.0.0.0/33"])).toThrow();
+    expect(() => buildAllowlist(["58.65.176.229", "2407:d000:1c:2553::/64"])).not.toThrow();
+  });
+});

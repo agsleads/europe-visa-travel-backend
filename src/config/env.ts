@@ -1,6 +1,8 @@
 import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 
+import { buildAllowlist } from "@/lib/ipList";
+
 /*
  * Environment is parsed once, at boot, through a schema. A missing or
  * malformed variable must crash the process on startup — not surface as an
@@ -187,6 +189,23 @@ const envSchema = z
       z.enum(["v1", "v2", "v3", "v5"]).optional(),
     ),
     BLACKLIST_ALLIANCE_TIMEOUT_MS: z.coerce.number().int().positive().max(60_000).default(10_000),
+    /**
+     * Who may call the Blacklist lookup: comma-separated IPs or CIDR ranges,
+     * IPv4 or IPv6, matched against the client address Caddy forwards. Empty
+     * leaves the route open to every IP. Each entry is checked at boot, so a
+     * typo crashes the process instead of quietly locking everyone out.
+     */
+    BLACKLIST_ALLOWED_IPS: z
+      .string()
+      .default("")
+      .transform(csv)
+      .superRefine((entries, ctx) => {
+        try {
+          buildAllowlist(entries);
+        } catch (error) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: (error as Error).message });
+        }
+      }),
 
     /**
      * CallGrid Bid API. It has no API key: the Grid ID the buyer issues is the
