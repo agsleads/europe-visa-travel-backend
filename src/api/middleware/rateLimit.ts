@@ -226,3 +226,24 @@ export const blacklistLookupLimiter = rateLimit({
     },
   },
 });
+
+/**
+ * CallGrid bid and confirmation, called from the static bid page.
+ *
+ * Unauthenticated like the Onyx and Blacklist routes, so this limiter is the
+ * whole of its protection. Its own instance so traffic here cannot throttle
+ * those tools, and vice versa; the bid and its confirmation share it, since
+ * they are one flow. Same in-process KNOWN LIMIT as the others.
+ */
+export const callGridBidLimiter = rateLimit({
+  windowMs: 60_000,
+  max: env.CALLGRID_RATE_LIMIT_MAX,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    error: {
+      code: "rate_limited",
+      message: "Too many bid requests. Please wait a moment and try again.",
+    },
+  },
+});

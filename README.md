@@ -218,6 +218,33 @@ blacklist_rejected` with `upstreamStatus` and `upstreamMessage`. A 403 there
 means our key is wrong. An unset `BLACKLIST_ALLIANCE_API_KEY` answers `503`.
 Test numbers: `2223334444` (good), `9999999999` (blacklisted).
 
+### CallGrid bids
+
+Asks a CallGrid buyer's Grid for a real-time bid on a call. Stores nothing.
+**Public, no API key**, for the reason the Blacklist route is; protected by
+`CALLGRID_RATE_LIMIT_MAX` (per IP, per minute) and `CORS_ORIGINS`.
+
+| Method | Path                                | Auth | Purpose |
+| ------ | ----------------------------------- | ---- | ------- |
+| POST   | `/callgrid/bid`                     | none | `{ CallerId, InboundStateCode?, InboundZipCode?, pstn?, …extras }` → `200 { data: <CallGrid response> }`. |
+| POST   | `/callgrid/bid/:bidId/confirm`      | none | Confirms a bid that answered `confirmationRequired: true`. |
+
+Field names are CallGrid's, so the body is forwarded as sent. `CallerId` is
+brought to E.164 (`+1` added to 10-digit US numbers). Up to 30 buyer-defined
+extras (`age`, `CampaignType`, `PublisherId`, tags…) pass through as strings,
+numbers or booleans. Upstream is `POST https://bid.callgrid.com/api/bid/{CALLGRID_GRID_ID}`.
+CallGrid has no API key: the Grid ID is the credential, so it is never logged.
+
+**`200` does not mean the bid was won.** CallGrid answers a refusal with HTTP 200
+and a code in the body. `data.code` `1000` is a bid: `dynamicBid` (USD),
+`dynamicSipAddress` or, with `pstn: true`, `dynamicPhoneNumber`, valid for
+`expirationSeconds`. `4001`–`4013` are refusals (paused, capped, duplicate,
+invalid caller ID…). CallGrid's own 429 (code `5001`) comes back as `429
+callgrid_rate_limited`. Other upstream HTTP errors are `502 callgrid_rejected`.
+An unset `CALLGRID_GRID_ID` answers `503`. An unknown Grid ID gets a canned
+`1000` with a placeholder `somewhere.sip.callgrid.com` address, not an error,
+so a "win" alone does not prove the Grid ID is right.
+
 `?q=` searches reference, name, email, destination and message. It uses
 `POSITION`, not `LIKE`, so `%` and `_` in a search term are literal characters
 rather than wildcards — otherwise searching for "50%" would match every row.

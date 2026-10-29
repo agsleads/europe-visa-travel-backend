@@ -22,6 +22,7 @@ import { socialSecurityRouter } from "@/api/routes/socialsecurity.routes";
 import { leadsRouter } from "@/api/routes/leads.routes";
 import { onyxRouter } from "@/api/routes/onyx.routes";
 import { blacklistRouter } from "@/api/routes/blacklist.routes";
+import { callGridRouter } from "@/api/routes/callgrid.routes";
 import { healthRouter } from "@/api/routes/health.routes";
 import { logger } from "@/lib/logger";
 import type { EnquiryService } from "@/services/enquiry.service";
@@ -35,6 +36,7 @@ import type { AutoInsuranceService } from "@/services/autoinsurance.service";
 import type { SocialSecurityService } from "@/services/socialsecurity.service";
 import type { OnyxClient } from "@/services/onyx.client";
 import type { BlacklistClient } from "@/services/blacklist.client";
+import type { CallGridClient } from "@/services/callgrid.client";
 
 /**
  * The app is built by a factory, not created at import time. Tests construct
@@ -56,6 +58,7 @@ export function createApp(
     socialSecurityService?: SocialSecurityService;
     onyxClient?: OnyxClient;
     blacklistClient?: BlacklistClient;
+    callGridClient?: CallGridClient;
   } = {},
 ): Express {
   const app = express();
@@ -150,6 +153,8 @@ export function createApp(
   app.use("/api/v1/onyx", onyxRouter(deps.onyxClient));
   /* Blacklist Alliance single-number lookup; stores nothing. */
   app.use("/api/v1/blacklist", blacklistRouter(deps.blacklistClient));
+  /* CallGrid real-time bids and their confirmations; stores nothing. */
+  app.use("/api/v1/callgrid", callGridRouter(deps.callGridClient));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

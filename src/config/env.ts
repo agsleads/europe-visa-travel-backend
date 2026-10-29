@@ -189,6 +189,18 @@ const envSchema = z
     BLACKLIST_ALLIANCE_TIMEOUT_MS: z.coerce.number().int().positive().max(60_000).default(10_000),
 
     /**
+     * CallGrid Bid API. It has no API key: the Grid ID the buyer issues is the
+     * whole credential, so it is never logged. Blank means absent: the bid
+     * routes then answer 503 instead of calling CallGrid.
+     */
+    CALLGRID_GRID_ID: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.string().regex(/^[A-Za-z0-9]{10,64}$/, "CALLGRID_GRID_ID must be the Grid ID, e.g. cm97s8hmv000ijt06r4djmije.").optional(),
+    ),
+    CALLGRID_API_URL: z.string().url().default("https://bid.callgrid.com"),
+    CALLGRID_TIMEOUT_MS: z.coerce.number().int().positive().max(60_000).default(10_000),
+
+    /**
      * Facebook Lead Ads.
      *
      * META_APP_SECRET signs every webhook delivery (`x-hub-signature-256`) and
@@ -261,6 +273,13 @@ const envSchema = z
      * lookup.
      */
     BLACKLIST_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(10_000).default(30),
+
+    /**
+     * Ceiling for the PUBLIC CallGrid bid routes, per IP per minute. Its own
+     * knob for the reason the Onyx and Blacklist ones are: no API key guards
+     * those routes, so this is the whole of their protection.
+     */
+    CALLGRID_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(10_000).default(30),
 
     RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(10 * 60 * 1000),
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
